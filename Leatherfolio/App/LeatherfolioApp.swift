@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 @main
 struct LeatherfolioApp: App {
@@ -6,5 +7,6 @@ struct LeatherfolioApp: App {
         WindowGroup {
             ContentView()
         }
+        .modelContainer(AppModelContainer.shared)
     }
 }
