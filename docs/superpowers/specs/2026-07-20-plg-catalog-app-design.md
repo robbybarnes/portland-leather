@@ -6,7 +6,7 @@
 
 A personal-catalog iOS app for Portland Leather Goods (PLG) customers to track the bags and accessories they own — name, size, color, leather type, photos, cost/value — with QR self-labeling and barcode capture to speed up cataloging. "Closet inventory for one leather brand's ecosystem."
 
-**Working title:** *Leatherfolio* (deliberately generic — no PLG trademark in the name). The app is an unofficial fan tool and will not be released until PLG grants permission to use their product names/imagery. All scraped reference data lives in `research/` and is for development only.
+**App name:** *My PLG Collection* (display name, per Robby's decision 2026-07-20; internal module/target stays `Leatherfolio` since Swift identifiers can't contain spaces). The name uses the "PLG" abbreviation rather than the full trademark; the app remains an unofficial fan tool and will not be released until PLG grants permission to use their product names/imagery — the name can be revisited as part of that conversation. All scraped reference data lives in `research/` and is for development only.
 
 ---
 

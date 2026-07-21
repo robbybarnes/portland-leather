@@ -19,7 +19,7 @@ Each phase plan produces working, testable software on its own. Complete and com
 ## Global Constraints
 
 - **iOS deployment target:** 18.0. Swift language mode 6.
-- **Bundle ID:** `com.robbybarnes.leatherfolio`. **Display name:** Leatherfolio. **URL scheme:** `leatherfolio`.
+- **Bundle ID:** `com.robbybarnes.leatherfolio`. **Display name:** My PLG Collection. **URL scheme:** `leatherfolio`. (Module/target/dirs stay `Leatherfolio` — valid Swift identifiers; only the user-facing display name changes.)
 - **No third-party dependencies** in the app target. Dev tooling allowed: XcodeGen (via Homebrew), SwiftLint optional.
 - **Project generation:** `project.yml` (XcodeGen) is source of truth; `Leatherfolio.xcodeproj` is generated and **gitignored**. Regenerate with `xcodegen generate` after any file add/remove.
 - **Build/test loop:** `xcodegen generate && xcodebuild -project Leatherfolio.xcodeproj -scheme Leatherfolio -destination 'platform=iOS Simulator,name=iPhone 16' build` (tests: `test` action, same destination; substitute any available iPhone simulator via `xcrun simctl list devices available`).
