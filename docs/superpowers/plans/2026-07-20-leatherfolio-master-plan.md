@@ -200,6 +200,33 @@ final class CatalogSeed: Sendable {
     var allColors: [String] { get }            // deduped, sorted, across lines
 }
 
+// Leatherfolio/Services/CollectionStats.swift
+// Pure stats engine: built + fully unit-tested in Phase 2, rendered by Phase 4's StatsView.
+struct LineCompleteness: Equatable, Identifiable {
+    let lineName: String
+    let ownedColors: [String]   // distinct owned colors that exist in the line's palette
+    let totalColors: Int        // the line's full palette size
+    var id: String { lineName }
+}
+struct CategoryCount: Equatable, Identifiable {
+    let category: ItemCategory
+    let count: Int
+    var id: String { category.rawValue }
+}
+struct CollectionStats: Equatable {
+    init(items: [Item], catalog: CatalogSeed)   // callers pass owned, non-wishlist items
+    let itemCount: Int
+    let distinctColorCount: Int
+    let distinctLeatherTypeCount: Int
+    let unicornCount: Int
+    let totalSpent: Decimal           // sum of myCost where present
+    let totalEstimatedValue: Decimal  // sum of estimatedValue where present
+    let unrealizedDelta: Decimal      // per-item valueDelta summed where both sides present
+    let averageRating: Double?        // over items rated >= 1; nil if none
+    let itemsByCategory: [CategoryCount]      // ordered by ItemCategory.allCases; empty categories omitted
+    let lineCompleteness: [LineCompleteness]  // sorted by lineName
+}
+
 // Leatherfolio/Services/ProductLookupService.swift
 struct ProductInfo: Equatable { let name: String?; let description: String? }
 protocol ProductLookupService: Sendable {
