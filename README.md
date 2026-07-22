@@ -76,7 +76,8 @@ VoiceOver output, physical camera behavior, CloudKit sync, signing, or release p
 
 ### Automated evidence
 
-- [ ] Run the full XCTest suite from the final review commit and record the result before release.
+- [x] Fresh full XCTest suite passed from review commit `f2a877f`: 172 tests, 0 failures,
+  0 skips (2026-07-22, iPhone 17 Pro simulator running iOS 26.4).
 - [x] Fresh simulator build succeeded from the generated project (2026-07-22, iPhone 17 Pro
   simulator running iOS 26.4).
 - [x] App icon generator reproduced a byte-identical 1024×1024 opaque RGB PNG on the current
