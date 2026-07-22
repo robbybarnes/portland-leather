@@ -14,12 +14,14 @@ final class ImageStore: @unchecked Sendable {
 
     private let worker: ImageStoreWorker
     private let directory: URL
+    private let originalPreparer: (@Sendable (Data) async -> Data?)?
 
     /// `executionObserver` is a dependency/execution seam used to verify that
     /// disk I/O and ImageIO work execute outside the main actor.
     init(
         directory: URL? = nil,
-        executionObserver: @escaping @Sendable () -> Void = {}
+        executionObserver: @escaping @Sendable () -> Void = {},
+        originalPreparer: (@Sendable (Data) async -> Data?)? = nil
     ) {
         self.directory = directory ?? FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -27,6 +29,7 @@ final class ImageStore: @unchecked Sendable {
         worker = ImageStoreWorker(
             directory: self.directory,
             executionObserver: executionObserver)
+        self.originalPreparer = originalPreparer
     }
 
     func thumbnailFileURL(for photoID: UUID) -> URL {
@@ -66,7 +69,10 @@ final class ImageStore: @unchecked Sendable {
 
     /// Downsamples an imported original before any SwiftData transaction.
     func prepareOriginal(from data: Data) async -> Data? {
-        await downsampledJPEG(
+        if let originalPreparer {
+            return await originalPreparer(data)
+        }
+        return await downsampledJPEG(
             from: data, maxDimension: ImageStore.storedOriginalMaxDimension)
     }
 

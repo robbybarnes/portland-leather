@@ -31,6 +31,7 @@ struct AddEditItemView: View {
                 acquiredSection
                 notesSection
             }
+            .disabled(isInteractionBusy)
             .navigationTitle(model.isEditing ? "Edit Item" : "New Item")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

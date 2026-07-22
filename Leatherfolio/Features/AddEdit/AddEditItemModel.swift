@@ -77,6 +77,7 @@ final class AddEditItemModel {
     var newPhotoDatas: [Data] {
         get { queuedPhotos.map(\.data) }
         set {
+            guard !isBusy else { return }
             queuedPhotos = newValue.map { QueuedPhoto(data: $0) }
             normalizePrimarySelection()
         }
@@ -89,17 +90,24 @@ final class AddEditItemModel {
     var isBusy: Bool { isImporting || isSaving }
 
     func queuePhoto(_ data: Data) {
+        guard !isBusy else { return }
+        appendQueuedPhoto(data)
+    }
+
+    private func appendQueuedPhoto(_ data: Data) {
         let queued = QueuedPhoto(data: data)
         queuedPhotos.append(queued)
         if primaryPhotoID == nil { primaryPhotoID = queued.id }
     }
 
     func removeQueuedPhoto(id: UUID) {
+        guard !isBusy else { return }
         queuedPhotos.removeAll { $0.id == id }
         normalizePrimarySelection()
     }
 
     func removeExistingPhoto(id: UUID) {
+        guard !isBusy else { return }
         guard existingPhotos.contains(where: { $0.id == id }) else { return }
         removedExistingPhotoIDs.insert(id)
         normalizePrimarySelection()
@@ -110,12 +118,14 @@ final class AddEditItemModel {
     }
 
     func choosePrimary(photoID: UUID) {
+        guard !isBusy else { return }
         guard visibleExistingPhotos.contains(where: { $0.id == photoID })
                 || queuedPhotos.contains(where: { $0.id == photoID }) else { return }
         primaryPhotoID = photoID
     }
 
     func updateCaption(_ caption: String, for photoID: UUID) {
+        guard !isBusy else { return }
         if let index = existingPhotos.firstIndex(where: { $0.id == photoID }) {
             existingPhotos[index].caption = caption
         } else if let index = queuedPhotos.firstIndex(where: { $0.id == photoID }) {
@@ -152,7 +162,7 @@ final class AddEditItemModel {
                     failureCount += 1
                     continue
                 }
-                queuePhoto(prepared)
+                appendQueuedPhoto(prepared)
             } catch {
                 failureCount += 1
             }
@@ -270,6 +280,8 @@ final class AddEditItemModel {
         defer { isSaving = false }
 
         let queuedSnapshot = queuedPhotos
+        let existingDraftSnapshot = existingPhotos
+        let selectedPrimarySnapshot = primaryPhotoID
         var preparedQueued: [(draft: QueuedPhoto, data: Data)] = []
         for draft in queuedSnapshot {
             if let prepared = await imageStore.prepareOriginal(from: draft.data) {
@@ -293,7 +305,7 @@ final class AddEditItemModel {
                 for photo in removedPhotos { context.delete(photo) }
 
                 for photo in survivingPhotos {
-                    if let draft = existingPhotos.first(where: { $0.id == photo.id }) {
+                    if let draft = existingDraftSnapshot.first(where: { $0.id == photo.id }) {
                         photo.caption = normalized(draft.caption)
                     }
                     photo.isPrimary = false
@@ -312,7 +324,7 @@ final class AddEditItemModel {
 
                 let allSavedPhotos = survivingPhotos + insertedPhotos
                 let validIDs = Set(allSavedPhotos.map(\.id))
-                let selectedPrimary = primaryPhotoID.flatMap {
+                let selectedPrimary = selectedPrimarySnapshot.flatMap {
                     validIDs.contains($0) ? $0 : nil
                 } ?? allSavedPhotos.first?.id
                 for photo in allSavedPhotos {
@@ -330,8 +342,9 @@ final class AddEditItemModel {
         }
 
         existingItem = item
-        queuedPhotos.removeAll()
-        removedExistingPhotoIDs.removeAll()
+        let committedQueuedIDs = Set(queuedSnapshot.map(\.id))
+        queuedPhotos.removeAll { committedQueuedIDs.contains($0.id) }
+        removedExistingPhotoIDs.subtract(removedIDs)
         loadExistingPhotoDrafts(from: item)
         for photoID in removedIDs {
             await imageStore.removeThumbnail(for: photoID)
