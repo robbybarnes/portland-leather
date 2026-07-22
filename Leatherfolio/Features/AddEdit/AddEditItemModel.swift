@@ -13,6 +13,16 @@ final class AddEditItemModel {
     var category: ItemCategory = .other
     var sizeText = ""
     var colorText = ""
+
+    var size: String {
+        get { sizeText }
+        set { sizeText = newValue }
+    }
+    var color: String {
+        get { colorText }
+        set { colorText = newValue }
+    }
+
     var leatherType: LeatherType?
     var condition: ItemCondition?
     var rating = 0
@@ -29,12 +39,50 @@ final class AddEditItemModel {
     /// JPEG/HEIC data of photos picked this session, in pick order.
     var newPhotoDatas: [Data] = []
 
-    // MARK: Phase 2 injection point (cascading pickers)
-    // Phase 2's CatalogSeed fills these from plg_catalog.json. Empty means
-    // "no curated options" and the form falls back to free-text fields —
-    // which is the entire Phase 1 behavior. Do not rename.
-    var sizeOptions: [String] = []
-    var colorOptions: [String] = []
+    // MARK: - Catalog-driven picker options (Phase 2)
+
+    /// Injection seam: tests assign a CatalogSeed(data:) fixture.
+    var catalog: CatalogSeed = .shared
+
+    /// Name of the selected catalog line; nil = free-form item.
+    var selectedLineName: String?
+
+    var lineOptions: [CatalogLine] { catalog.lines(in: category) }
+    var selectedLine: CatalogLine? { selectedLineName.flatMap { catalog.line(named: $0) } }
+    var sizeOptions: [String] { selectedLine?.sizes ?? [] }
+    var colorOptions: [String] { selectedLine?.colors ?? [] }
+    var leatherTypeOptions: [LeatherType] {
+        (selectedLine?.leatherTypes ?? []).compactMap(LeatherType.init(rawValue:))
+    }
+
+    /// Select (or deselect with nil) a catalog line. Prefills the name when the
+    /// user hasn't typed one (or typed exactly another line's name), and clears
+    /// any picker choices the new line doesn't offer.
+    func selectLine(_ line: CatalogLine?) {
+        selectedLineName = line?.name
+        guard let line else { return }
+        if name.isEmpty || catalog.line(named: name) != nil {
+            name = line.name
+        }
+        if !size.isEmpty, !line.sizes.contains(size) { size = "" }
+        if !color.isEmpty, !line.colors.contains(color) { color = "" }
+        if let leatherType, !line.leatherTypes.contains(leatherType.rawValue) {
+            self.leatherType = nil
+        }
+    }
+
+    /// Call after `category` changes: a line from another category can't stay selected.
+    func categoryDidChange() {
+        if let selectedLine, selectedLine.category != category.rawValue {
+            selectLine(nil)
+        }
+    }
+
+    /// Call when loading an existing item for editing: re-links the line whose
+    /// name the item carries so the cascading pickers light up.
+    func syncSelectedLineFromName() {
+        selectedLineName = catalog.line(named: name)?.name
+    }
 
     private(set) var existingItem: Item?
     var isEditing: Bool { existingItem != nil }
@@ -59,6 +107,7 @@ final class AddEditItemModel {
         hasDateAcquired = item.dateAcquired != nil
         dateAcquired = item.dateAcquired ?? .now
         notes = item.notes ?? ""
+        syncSelectedLineFromName()
     }
 
     /// Writes the form into a new or existing Item, downsampling (2048 max

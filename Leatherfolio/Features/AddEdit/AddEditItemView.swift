@@ -95,40 +95,40 @@ struct AddEditItemView: View {
                     Text(category.rawValue).tag(category)
                 }
             }
-            // Phase 2 injection point: when CatalogSeed provides options,
-            // these two fields become cascading pickers. Empty options mean
-            // free-text — all of Phase 1.
-            if model.sizeOptions.isEmpty {
-                TextField("Size", text: $model.sizeText)
-            } else {
-                Picker("Size", selection: $model.sizeText) {
-                    Text("None").tag("")
-                    ForEach(model.sizeOptions, id: \.self) { option in
-                        Text(option).tag(option)
-                    }
+            .onChange(of: model.category) { model.categoryDidChange() }
+
+            Picker("Line", selection: lineSelection) {
+                Text("None").tag(String?.none)
+                ForEach(model.lineOptions) { line in
+                    Text(line.name).tag(String?.some(line.name))
                 }
             }
-            if model.colorOptions.isEmpty {
-                TextField("Color", text: $model.colorText)
-            } else {
-                Picker("Color", selection: $model.colorText) {
-                    Text("None").tag("")
-                    ForEach(model.colorOptions, id: \.self) { option in
-                        Text(option).tag(option)
-                    }
-                }
-            }
-            Picker("Leather", selection: $model.leatherType) {
-                Text("None").tag(LeatherType?.none)
-                ForEach(LeatherType.allCases) { type in
-                    Text(type.rawValue).tag(LeatherType?.some(type))
-                }
-            }
+            OptionPicker(title: "Size", options: model.sizeOptions, selection: $model.sizeText)
+            OptionPicker(title: "Color", options: model.colorOptions, selection: $model.colorText)
+            leatherTypeRow
+
             Picker("Condition", selection: $model.condition) {
                 Text("None").tag(ItemCondition?.none)
                 ForEach(ItemCondition.allCases) { condition in
                     Text(condition.rawValue).tag(ItemCondition?.some(condition))
                 }
+            }
+        }
+    }
+
+    private var lineSelection: Binding<String?> {
+        Binding(
+            get: { model.selectedLineName },
+            set: { newName in model.selectLine(newName.flatMap { model.catalog.line(named: $0) }) }
+        )
+    }
+
+    @ViewBuilder private var leatherTypeRow: some View {
+        let options = model.leatherTypeOptions
+        Picker("Leather", selection: $model.leatherType) {
+            Text("None").tag(LeatherType?.none)
+            ForEach(options.isEmpty ? LeatherType.allCases : options + [.other]) { lt in
+                Text(lt.rawValue).tag(LeatherType?.some(lt))
             }
         }
     }
