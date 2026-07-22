@@ -11,8 +11,12 @@ struct AddEditItemView: View {
     @State private var showingCamera = false
     @State private var showingSaveError = false
 
-    init(item: Item?) {
-        _model = State(initialValue: AddEditItemModel(item: item))
+    init(item: Item? = nil, model: AddEditItemModel? = nil) {
+        if let model {
+            _model = State(initialValue: model)
+        } else {
+            _model = State(initialValue: AddEditItemModel(item: item))
+        }
     }
 
     var body: some View {

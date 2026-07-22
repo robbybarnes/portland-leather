@@ -10,7 +10,9 @@ struct LeatherfolioApp: App {
             ContentView()
                 .environment(router)
                 .onOpenURL { url in
-                    router.handle(url: url)
+                    if let itemID = QRService.itemID(fromPayload: url.absoluteString) {
+                        router.open(itemID: itemID)
+                    }
                 }
         }
         .modelContainer(AppModelContainer.shared)

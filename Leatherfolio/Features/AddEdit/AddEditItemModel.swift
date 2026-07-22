@@ -35,9 +35,24 @@ final class AddEditItemModel {
     var hasDateAcquired = false
     var dateAcquired = Date.now
     var notes = ""
+    var upc = ""
 
     /// JPEG/HEIC data of photos picked this session, in pick order.
     var newPhotoDatas: [Data] = []
+
+    // MARK: - Scan capture (Phase 3)
+
+    /// Prefill from a scan: retail barcodes become the UPC (stable identifier,
+    /// spec decision #2 — capture, no lookup in v1); unknown QR payloads are
+    /// attached to notes so no scanned data is ever dropped.
+    func applyScanPrefill(code: String, isQR: Bool) {
+        if isQR {
+            let line = "Scanned code: \(code)"
+            notes = notes.isEmpty ? line : notes + "\n" + line
+        } else {
+            upc = code
+        }
+    }
 
     // MARK: - Catalog-driven picker options (Phase 2)
 
@@ -107,6 +122,7 @@ final class AddEditItemModel {
         hasDateAcquired = item.dateAcquired != nil
         dateAcquired = item.dateAcquired ?? .now
         notes = item.notes ?? ""
+        upc = item.upc ?? ""
         syncSelectedLineFromName()
     }
 
@@ -136,6 +152,7 @@ final class AddEditItemModel {
         item.estimatedValue = DecimalParsing.decimal(from: estimatedValueText)
         item.dateAcquired = hasDateAcquired ? dateAcquired : nil
         item.notes = normalized(notes)
+        item.upc = normalized(upc)
         item.updatedAt = .now
 
         var hasPrimary = (item.photos ?? []).contains(where: \.isPrimary)

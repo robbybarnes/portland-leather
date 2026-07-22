@@ -7,6 +7,7 @@ struct ItemDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingEdit = false
     @State private var showingDeleteConfirmation = false
+    @State private var showingQRLabel = false
 
     var body: some View {
         ScrollView {
@@ -175,20 +176,33 @@ struct ItemDetailView: View {
         }
     }
 
-    /// Shipping intermediate, not a placeholder: this card is the QR-label
-    /// section. Phase 3 replaces ONLY its body with the CIFilter-generated
-    /// QR image (QRService.qrImage) encoding leatherfolio://item/<uuid>.
-    /// Until then it shows the same stable UUID the QR will encode.
+    // QR label card — tap to enlarge/export
     private var qrLabelCard: some View {
-        infoCard("QR Label") {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(item.id.uuidString)
-                    .font(.caption.monospaced())
-                    .textSelection(.enabled)
-                Text("Printable QR code arrives with scanning support.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+        Button {
+            showingQRLabel = true
+        } label: {
+            HStack(spacing: 16) {
+                if let uiImage = QRService.qrImage(for: item.id, scale: 8) {
+                    Image(uiImage: uiImage)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 88, height: 88)
+                }
+                VStack(alignment: .leading) {
+                    Text("QR Label")
+                        .font(.headline)
+                    Text("Tap to enlarge or export")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
             }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("QR label. Tap to enlarge or export.")
+        .sheet(isPresented: $showingQRLabel) {
+            QRLabelSheet(item: item)
         }
     }
 
