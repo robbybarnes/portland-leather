@@ -19,6 +19,7 @@ struct StatsView: View {
             .padding()
         }
         .navigationTitle("Stats")
+        .background(Theme.background)
     }
 
     // MARK: - Blocks
@@ -30,11 +31,11 @@ struct StatsView: View {
             leatherTypeCount: stats.distinctLeatherTypeCount,
             unicornCount: stats.unicornCount
         ))
-        .font(.headline)
+        .font(.display(.title3))
     }
 
     private var moneyBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
             LabeledContent("Total spent",
                            value: CurrencyFormat.string(from: stats.totalSpent))
             LabeledContent("Estimated value",
@@ -42,9 +43,10 @@ struct StatsView: View {
             LabeledContent("Unrealized delta") {
                 Text(CurrencyFormat.signedString(from: stats.unrealizedDelta))
                     .fontWeight(.semibold)
-                    .foregroundStyle(stats.unrealizedDelta >= 0 ? Color.green : Color.red)
+                    .foregroundStyle(stats.unrealizedDelta >= 0 ? Theme.gain : Theme.loss)
             }
         }
+        .cardStyle()
     }
 
     private var ratingBlock: some View {

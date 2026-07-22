@@ -36,6 +36,7 @@ struct ItemCell: View {
         .task(id: item.primaryPhoto?.id) {
             await loadThumbnail()
         }
+        .cardStyle()
         .accessibilityElement(children: .combine)
     }
 

@@ -36,6 +36,7 @@ struct ItemDetailView: View {
         }
         .navigationTitle(item.name.isEmpty ? "Item" : item.name)
         .navigationBarTitleDisplayMode(.inline)
+        .background(Theme.background)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showingEdit = true }
@@ -104,7 +105,7 @@ struct ItemDetailView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(item.name.isEmpty ? "Untitled" : item.name)
-                .font(.title.bold())
+                .font(.display(.largeTitle))
             if item.isUnicorn { UnicornBadge() }
             Spacer()
             if item.favorite {

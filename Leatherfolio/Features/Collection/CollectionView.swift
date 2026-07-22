@@ -44,6 +44,7 @@ struct CollectionView: View {
             content
         }
         .navigationTitle("Collection")
+        .background(Theme.background)
         .searchable(text: $filter.query, prompt: "Search name, notes, tags")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -140,6 +141,8 @@ struct CollectionView: View {
                 }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Theme.background)
         }
     }
 
