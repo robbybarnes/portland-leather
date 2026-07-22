@@ -103,6 +103,12 @@ final class AddEditItemModel {
         appendQueuedPhoto(data)
     }
 
+    /// Camera captures remain raw in the retry-safe queue until save owns
+    /// original preparation. Library imports use `importPhotos` instead.
+    func queueCameraPhoto(_ data: Data) {
+        queuePhoto(data)
+    }
+
     private func appendQueuedPhoto(_ data: Data, preparedData: Data? = nil) {
         let queued = QueuedPhoto(data: data, preparedData: preparedData)
         queuedPhotos.append(queued)
@@ -298,7 +304,9 @@ final class AddEditItemModel {
                 preparedQueued.append((draft, preparedData))
                 continue
             }
-            if let prepared = await imageStore.prepareOriginal(from: draft.data) {
+            let prepared = await imageStore.prepareOriginal(from: draft.data)
+            try Task.checkCancellation()
+            if let prepared {
                 var preparedDraft = draft
                 preparedDraft.preparedData = prepared
                 preparedQueued.append((preparedDraft, prepared))
@@ -307,6 +315,7 @@ final class AddEditItemModel {
                 }
             }
         }
+        try Task.checkCancellation()
 
         let item = existingItem ?? Item()
         let original = existingItem.map(ItemSaveSnapshot.init)

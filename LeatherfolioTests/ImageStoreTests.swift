@@ -228,6 +228,30 @@ final class ImageStoreTests: XCTestCase {
         XCTAssertNil(cached)
     }
 
+    func testRemovingThumbnailInvalidatesGenerationAlreadyInFlight() async throws {
+        let gate = OperationGate(targetStage: .thumbnailDecode)
+        let photoID = UUID()
+        let data = try makeTestJPEGData()
+        let hookedStore = ImageStore(
+            directory: tempDirectory,
+            operationHook: { stage in await gate.hook(stage) })
+
+        let generationTask = Task { @MainActor in
+            await hookedStore.thumbnail(for: photoID) { data }
+        }
+        await gate.waitUntilSuspended()
+
+        await hookedStore.removeThumbnail(for: photoID)
+        await gate.open()
+
+        let generated = await generationTask.value
+        XCTAssertNil(generated)
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: hookedStore.thumbnailFileURL(for: photoID).path))
+        let cached = await hookedStore.thumbnail(for: photoID, imageData: nil)
+        XCTAssertNil(cached)
+    }
+
     func testImageIODiskCacheAndDeletionExecuteOffMain() async throws {
         let recorder = ExecutionRecorder()
         let observedStore = ImageStore(
@@ -254,5 +278,47 @@ final class ImageStoreTests: XCTestCase {
 
         XCTAssertLessThanOrEqual(
             max(image.size.width * image.scale, image.size.height * image.scale), 960)
+    }
+
+    func testBeginningCurrentThumbnailLoadClearsDisplayedImageBeforeAwaitedWork() {
+        let oldPhotoID = UUID()
+        let newPhotoID = UUID()
+        let oldImage = UIImage()
+        var state = ThumbnailLoadState(photoID: oldPhotoID, image: oldImage)
+
+        let didBegin = state.begin(
+            requestedPhotoID: newPhotoID,
+            currentPhotoID: newPhotoID,
+            isCancelled: false)
+
+        XCTAssertTrue(didBegin)
+        XCTAssertEqual(state.photoID, newPhotoID)
+        XCTAssertNil(state.image)
+    }
+
+    func testStaleOrCancelledThumbnailLoadCannotClearOrPublishOverCurrentImage() {
+        let oldPhotoID = UUID()
+        let currentPhotoID = UUID()
+        let currentImage = UIImage()
+        let staleImage = UIImage()
+        var state = ThumbnailLoadState(photoID: currentPhotoID, image: currentImage)
+
+        XCTAssertFalse(state.begin(
+            requestedPhotoID: oldPhotoID,
+            currentPhotoID: currentPhotoID,
+            isCancelled: false))
+        XCTAssertTrue(state.image === currentImage)
+        XCTAssertFalse(state.begin(
+            requestedPhotoID: currentPhotoID,
+            currentPhotoID: currentPhotoID,
+            isCancelled: true))
+        XCTAssertTrue(state.image === currentImage)
+
+        state.finish(
+            image: staleImage,
+            requestedPhotoID: oldPhotoID,
+            currentPhotoID: currentPhotoID,
+            isCancelled: false)
+        XCTAssertTrue(state.image === currentImage)
     }
 }

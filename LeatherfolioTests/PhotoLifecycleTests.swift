@@ -176,6 +176,33 @@ final class PhotoLifecycleTests: XCTestCase {
         XCTAssertEqual(saved.primaryPhoto?.imageData, preparedData)
     }
 
+    func testCameraCaptureQueuesRawDataUntilSavePreparation() async throws {
+        let (container, context) = try makeStore()
+        defer { withExtendedLifetime(container) {} }
+        let rawData = try makeTestJPEGData(width: 3_000, height: 1_500)
+        let preparedData = try makeTestJPEGData(width: 1_000, height: 500)
+        let recorder = PreparationRecorder(preparedResult: preparedData)
+        let store = ImageStore(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("PhotoLifecycleTests-\(UUID().uuidString)"),
+            originalPreparer: { data in await recorder.prepare(data) })
+        let model = AddEditItemModel(item: nil)
+        model.name = "Camera Tote"
+
+        model.queueCameraPhoto(rawData)
+
+        let countBeforeSave = await recorder.count()
+        XCTAssertEqual(countBeforeSave, 0)
+        XCTAssertEqual(model.queuedPhotos.first?.data, rawData)
+        XCTAssertNil(model.queuedPhotos.first?.preparedData)
+
+        let saved = try await model.save(in: context, imageStore: store)
+
+        let countAfterSave = await recorder.count()
+        XCTAssertEqual(countAfterSave, 1)
+        XCTAssertEqual(saved.primaryPhoto?.imageData, preparedData)
+    }
+
     func testImportDisablesSaveAndSaveCannotRaceIt() async throws {
         let (container, context) = try makeStore()
         defer { withExtendedLifetime(container) {} }
@@ -487,5 +514,48 @@ final class PhotoLifecycleTests: XCTestCase {
         let saved = try XCTUnwrap(savedItem)
         XCTAssertEqual(saved.photos?.map(\.id), [originalID])
         XCTAssertTrue(model.queuedPhotos.isEmpty)
+    }
+
+    func testCancellingSaveDuringRawPreparationDoesNotPersistOrDiscardQueue() async throws {
+        let (container, context) = try makeStore()
+        defer { withExtendedLifetime(container) {} }
+        let gate = PreparationGate()
+        let imageStore = ImageStore(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("PhotoLifecycleTests-\(UUID().uuidString)"),
+            originalPreparer: { data in await gate.prepare(data) })
+        let rawData = try makeTestJPEGData(width: 1_000, height: 500)
+        let model = AddEditItemModel(item: nil)
+        model.name = "Cancelled Tote"
+        model.queuePhoto(rawData)
+        let queuedID = try XCTUnwrap(model.queuedPhotos.first?.id)
+        model.updateCaption("Raw front", for: queuedID)
+        model.choosePrimary(photoID: queuedID)
+
+        var saveError: Error?
+        let saveTask = Task<Void, Never> { @MainActor in
+            do {
+                _ = try await model.save(in: context, imageStore: imageStore)
+            } catch {
+                saveError = error
+            }
+        }
+        await gate.waitUntilStarted()
+        XCTAssertTrue(model.isSaving)
+
+        saveTask.cancel()
+        await gate.open()
+        await saveTask.value
+
+        XCTAssertTrue(saveError is CancellationError)
+        XCTAssertFalse(model.isSaving)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Item>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Photo>()), 0)
+        XCTAssertFalse(context.hasChanges)
+        XCTAssertEqual(model.queuedPhotos.map(\.id), [queuedID])
+        XCTAssertEqual(model.queuedPhotos.first?.data, rawData)
+        XCTAssertEqual(model.queuedPhotos.first?.caption, "Raw front")
+        XCTAssertNil(model.queuedPhotos.first?.preparedData)
+        XCTAssertEqual(model.primaryPhotoID, queuedID)
     }
 }

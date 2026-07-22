@@ -48,7 +48,7 @@ struct AddEditItemView: View {
                 CameraPicker { result in
                     switch result {
                     case .success(let data):
-                        startImport(using: [{ data }])
+                        model.queueCameraPhoto(data)
                     case .failure:
                         model.photoImportErrorMessage =
                             "The camera photo couldn't be imported. Your item details and other photos are unchanged."

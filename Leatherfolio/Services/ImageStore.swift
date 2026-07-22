@@ -57,15 +57,18 @@ final class ImageStore: @unchecked Sendable {
         sourceData: () -> Data?
     ) async -> UIImage? {
         guard !Task.isCancelled else { return nil }
-        let cached = await worker.cachedThumbnail(for: photoID)
+        let lookup = await worker.cachedThumbnail(for: photoID)
         guard !Task.isCancelled else { return nil }
-        if let cached {
+        if let cached = lookup.image {
             return cached
         }
         guard !Task.isCancelled else { return nil }
         guard let data = sourceData() else { return nil }
         guard !Task.isCancelled else { return nil }
-        let thumbnail = await worker.makeThumbnail(for: photoID, sourceData: data)
+        let thumbnail = await worker.makeThumbnail(
+            for: photoID,
+            sourceData: data,
+            invalidationGeneration: lookup.invalidationGeneration)
         guard !Task.isCancelled else { return nil }
         return thumbnail
     }
@@ -138,8 +141,14 @@ final class ImageStore: @unchecked Sendable {
     }
 }
 
+private struct ThumbnailCacheLookup: @unchecked Sendable {
+    let image: UIImage?
+    let invalidationGeneration: UInt64
+}
+
 private actor ImageStoreWorker {
     private let memoryCache = NSCache<NSString, UIImage>()
+    private var invalidationGenerations: [UUID: UInt64] = [:]
     private let directory: URL
     private let executionObserver: @Sendable () -> Void
     private let operationHook: @Sendable (ImageStore.OperationStage) async -> Void
@@ -154,33 +163,54 @@ private actor ImageStoreWorker {
         self.operationHook = operationHook
     }
 
-    func cachedThumbnail(for photoID: UUID) async -> UIImage? {
-        guard !Task.isCancelled else { return nil }
+    func cachedThumbnail(for photoID: UUID) async -> ThumbnailCacheLookup {
+        let generation = invalidationGenerations[photoID, default: 0]
+        guard !Task.isCancelled else {
+            return ThumbnailCacheLookup(image: nil, invalidationGeneration: generation)
+        }
         await operationHook(.cacheLookup)
-        guard !Task.isCancelled else { return nil }
+        guard !Task.isCancelled,
+              invalidationGenerations[photoID, default: 0] == generation else {
+            return ThumbnailCacheLookup(image: nil, invalidationGeneration: generation)
+        }
         executionObserver()
         let key = photoID.uuidString as NSString
         if let cached = memoryCache.object(forKey: key) {
-            return Task.isCancelled ? nil : cached
+            let image = Task.isCancelled ? nil : cached
+            return ThumbnailCacheLookup(image: image, invalidationGeneration: generation)
         }
         let fileURL = thumbnailFileURL(for: photoID)
         guard let diskData = try? Data(contentsOf: fileURL),
               let image = UIImage(data: diskData) else {
-            return nil
+            return ThumbnailCacheLookup(image: nil, invalidationGeneration: generation)
         }
-        guard !Task.isCancelled else { return nil }
+        guard !Task.isCancelled,
+              invalidationGenerations[photoID, default: 0] == generation else {
+            return ThumbnailCacheLookup(image: nil, invalidationGeneration: generation)
+        }
         memoryCache.setObject(image, forKey: key)
-        guard !Task.isCancelled else {
+        guard !Task.isCancelled,
+              invalidationGenerations[photoID, default: 0] == generation else {
             memoryCache.removeObject(forKey: key)
-            return nil
+            return ThumbnailCacheLookup(image: nil, invalidationGeneration: generation)
         }
-        return image
+        return ThumbnailCacheLookup(image: image, invalidationGeneration: generation)
     }
 
-    func makeThumbnail(for photoID: UUID, sourceData: Data) async -> UIImage? {
-        guard !Task.isCancelled else { return nil }
+    func makeThumbnail(
+        for photoID: UUID,
+        sourceData: Data,
+        invalidationGeneration: UInt64
+    ) async -> UIImage? {
+        guard !Task.isCancelled,
+              invalidationGenerations[photoID, default: 0] == invalidationGeneration else {
+            return nil
+        }
         await operationHook(.thumbnailDecode)
-        guard !Task.isCancelled else { return nil }
+        guard !Task.isCancelled,
+              invalidationGenerations[photoID, default: 0] == invalidationGeneration else {
+            return nil
+        }
         executionObserver()
         guard let jpegData = ImageStore.makeDownsampledJPEG(
             from: sourceData,
@@ -241,6 +271,7 @@ private actor ImageStoreWorker {
 
     func removeThumbnail(for photoID: UUID) {
         executionObserver()
+        invalidationGenerations[photoID, default: 0] &+= 1
         memoryCache.removeObject(forKey: photoID.uuidString as NSString)
         try? FileManager.default.removeItem(at: thumbnailFileURL(for: photoID))
     }

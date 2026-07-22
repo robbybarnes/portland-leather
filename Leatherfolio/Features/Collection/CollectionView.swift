@@ -201,12 +201,12 @@ struct CollectionView: View {
 /// decoded at full size in a list.
 struct ItemRow: View {
     let item: Item
-    @State private var thumbnail: UIImage?
+    @State private var thumbnailState = ThumbnailLoadState()
 
     var body: some View {
         HStack(spacing: 12) {
             Group {
-                if let thumbnail {
+                if let thumbnail = thumbnailState.image {
                     Image(uiImage: thumbnail)
                         .resizable()
                         .scaledToFill()
@@ -241,24 +241,26 @@ struct ItemRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(AccessibilityText.label(for: item))
-        .task(id: item.primaryPhoto?.id) {
-            await loadThumbnail()
+        .task(id: item.primaryPhoto?.id) { [requestedPhotoID = item.primaryPhoto?.id] in
+            await loadThumbnail(for: requestedPhotoID)
         }
     }
 
-    private func loadThumbnail() async {
-        let requestedPhotoID = item.primaryPhoto?.id
+    private func loadThumbnail(for requestedPhotoID: UUID?) async {
+        guard thumbnailState.begin(
+            requestedPhotoID: requestedPhotoID,
+            currentPhotoID: item.primaryPhoto?.id,
+            isCancelled: Task.isCancelled) else { return }
         guard let requestedPhotoID,
               let photo = item.primaryPhoto,
-              photo.id == requestedPhotoID else {
-            guard !Task.isCancelled, item.primaryPhoto?.id == requestedPhotoID else { return }
-            thumbnail = nil
-            return
-        }
+              photo.id == requestedPhotoID else { return }
         let loadedThumbnail = await ImageStore.shared.thumbnail(for: requestedPhotoID) {
             photo.imageData
         }
-        guard !Task.isCancelled, item.primaryPhoto?.id == requestedPhotoID else { return }
-        thumbnail = loadedThumbnail
+        thumbnailState.finish(
+            image: loadedThumbnail,
+            requestedPhotoID: requestedPhotoID,
+            currentPhotoID: item.primaryPhoto?.id,
+            isCancelled: Task.isCancelled)
     }
 }

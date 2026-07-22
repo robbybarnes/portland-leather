@@ -1,8 +1,41 @@
 import SwiftUI
 
+struct ThumbnailLoadState {
+    private(set) var photoID: UUID?
+    private(set) var image: UIImage?
+
+    init(photoID: UUID? = nil, image: UIImage? = nil) {
+        self.photoID = photoID
+        self.image = image
+    }
+
+    mutating func begin(
+        requestedPhotoID: UUID?,
+        currentPhotoID: UUID?,
+        isCancelled: Bool
+    ) -> Bool {
+        guard !isCancelled, requestedPhotoID == currentPhotoID else { return false }
+        photoID = requestedPhotoID
+        image = nil
+        return true
+    }
+
+    mutating func finish(
+        image: UIImage?,
+        requestedPhotoID: UUID,
+        currentPhotoID: UUID?,
+        isCancelled: Bool
+    ) {
+        guard !isCancelled,
+              requestedPhotoID == currentPhotoID,
+              photoID == requestedPhotoID else { return }
+        self.image = image
+    }
+}
+
 struct ItemCell: View {
     let item: Item
-    @State private var thumbnail: UIImage?
+    @State private var thumbnailState = ThumbnailLoadState()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -33,8 +66,8 @@ struct ItemCell: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .task(id: item.primaryPhoto?.id) {
-            await loadThumbnail()
+        .task(id: item.primaryPhoto?.id) { [requestedPhotoID = item.primaryPhoto?.id] in
+            await loadThumbnail(for: requestedPhotoID)
         }
         .cardStyle()
         .accessibilityElement(children: .ignore)
@@ -51,7 +84,7 @@ struct ItemCell: View {
 
     @ViewBuilder
     private var thumbnailView: some View {
-        if let thumbnail {
+        if let thumbnail = thumbnailState.image {
             Image(uiImage: thumbnail)
                 .resizable()
                 .scaledToFill()
@@ -68,20 +101,22 @@ struct ItemCell: View {
 
     /// Source bytes are accessed lazily only after ImageStore checks both
     /// memory and disk thumbnail caches.
-    private func loadThumbnail() async {
-        let requestedPhotoID = item.primaryPhoto?.id
+    private func loadThumbnail(for requestedPhotoID: UUID?) async {
+        guard thumbnailState.begin(
+            requestedPhotoID: requestedPhotoID,
+            currentPhotoID: item.primaryPhoto?.id,
+            isCancelled: Task.isCancelled) else { return }
         guard let requestedPhotoID,
               let photo = item.primaryPhoto,
-              photo.id == requestedPhotoID else {
-            guard !Task.isCancelled, item.primaryPhoto?.id == requestedPhotoID else { return }
-            thumbnail = nil
-            return
-        }
+              photo.id == requestedPhotoID else { return }
         let loadedThumbnail = await ImageStore.shared.thumbnail(for: requestedPhotoID) {
             photo.imageData
         }
-        guard !Task.isCancelled, item.primaryPhoto?.id == requestedPhotoID else { return }
-        thumbnail = loadedThumbnail
+        thumbnailState.finish(
+            image: loadedThumbnail,
+            requestedPhotoID: requestedPhotoID,
+            currentPhotoID: item.primaryPhoto?.id,
+            isCancelled: Task.isCancelled)
     }
 }
 
