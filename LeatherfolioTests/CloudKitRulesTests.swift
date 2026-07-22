@@ -7,15 +7,22 @@ import SwiftData
 @MainActor
 final class CloudKitRulesTests: XCTestCase {
 
-    private func makeContext() throws -> ModelContext {
-        let container = try AppModelContainer.make(inMemory: true)
-        return container.mainContext
+    private var container: ModelContainer!
+    private var context: ModelContext!
+
+    override func setUpWithError() throws {
+        container = try AppModelContainer.make(inMemory: true)
+        context = container.mainContext
+    }
+
+    override func tearDownWithError() throws {
+        context = nil
+        container = nil
     }
 
     /// CloudKit rule: every property optional or defaulted. If a bare Item()
     /// inserts and saves with no arguments, the rule holds for the schema.
     func testItemWithOnlyDefaultsSaves() throws {
-        let context = try makeContext()
         let item = Item()
         context.insert(item)
         try context.save()
@@ -48,7 +55,6 @@ final class CloudKitRulesTests: XCTestCase {
     /// Relationships round-trip in both directions: Item -> Photo/Tag and
     /// the inverses Photo.item / Tag.items.
     func testPhotoAndTagRelationshipsRoundTrip() throws {
-        let context = try makeContext()
         let item = Item()
         item.name = "Medium Crossbody Tote"
         let photo = Photo()

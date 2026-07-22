@@ -22,14 +22,11 @@ documentation, catalog research, and the first slice of app code.
 | Design spec, master plan, phase plans | ✅ Complete (`docs/superpowers/`) |
 | Catalog research (37 products via Firecrawl) | ✅ Complete (`research/`) |
 | Task 1 — XcodeGen project skeleton | ✅ Done, reviewed |
-| Task 2 — SwiftData models (Item/Photo/Tag) | ✅ Code done; persistence tests pending toolchain* |
+| Task 2 — SwiftData models (Item/Photo/Tag) | ✅ Done, reviewed, tests green |
 | Task 3 — ImageStore (thumbnail cache) | ✅ Done, reviewed, tests green |
 | Task 4-7 — grid, add/edit, detail, navigation | ⏳ Planned, not yet built |
 | Phase 2-3 — catalog seed + scanning | ⏳ Planned |
 | Phase 4 — filters, stats, design, a11y | ⏳ Planned |
-
-\* *SwiftData `insert`/`save` currently traps under Xcode 27 Beta 4 (an Apple beta bug, not app
-code). The two persistence tests will verify once building on a stable Xcode — see below.*
 
 ## Architecture
 

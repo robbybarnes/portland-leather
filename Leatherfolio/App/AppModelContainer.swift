@@ -23,8 +23,7 @@ enum AppModelContainer {
         let schema = Schema([Item.self, Photo.self, Tag.self])
         let configuration = ModelConfiguration(
             schema: schema,
-            isStoredInMemoryOnly: inMemory,
-            cloudKitDatabase: .none  // one-line flip to .automatic later (see AppConfig)
+            isStoredInMemoryOnly: inMemory
         )
         return try ModelContainer(for: schema, configurations: [configuration])
     }
