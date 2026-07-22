@@ -2,7 +2,10 @@
 
 All notable changes to **My PLG Collection** (internal target `Leatherfolio`) will be documented in this file.
 
-## [1.0.0] - 2026-07-21
+## [Unreleased] — personal development builds
+
+Nothing in this changelog has been publicly released. The entries below describe implemented
+preview work, not a completed 1.0 product.
 
 ### Added
 - **Core Catalog MVP (Phase 0–1):**

@@ -5,6 +5,7 @@
 *.xcodeproj
 xcuserdata/
 DerivedData/
+.derived-data/
 build/
 .swiftpm/
 *.xcresult

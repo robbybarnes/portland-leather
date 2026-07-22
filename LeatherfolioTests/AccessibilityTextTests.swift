@@ -72,4 +72,15 @@ final class AccessibilityTextTests: XCTestCase {
             "Photo 1 of 1"
         )
     }
+
+    func testQRLabelIdentifiesNamedAndUntitledItems() {
+        XCTAssertEqual(
+            AccessibilityText.qrLabel(itemName: "Willow Tote"),
+            "QR label for Willow Tote"
+        )
+        XCTAssertEqual(
+            AccessibilityText.qrLabel(itemName: ""),
+            "QR label for Untitled item"
+        )
+    }
 }

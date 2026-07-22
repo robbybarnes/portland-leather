@@ -52,7 +52,7 @@ struct StatsView: View {
     private var ratingBlock: some View {
         LabeledContent("Average rating") {
             if let average = stats.averageRating {
-                Text(String(format: "%.1f of 5", average))
+                Text(StatsFormatting.averageRating(average))
             } else {
                 Text("No ratings yet")
                     .foregroundStyle(.secondary)

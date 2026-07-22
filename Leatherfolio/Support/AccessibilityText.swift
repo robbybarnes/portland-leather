@@ -31,4 +31,9 @@ enum AccessibilityText {
         }
         return "Photo \(index + 1) of \(count)"
     }
+
+    static func qrLabel(itemName: String) -> String {
+        let name = itemName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "QR label for \(name.isEmpty ? "Untitled item" : name)"
+    }
 }

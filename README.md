@@ -1,94 +1,126 @@
 # My PLG Collection
 
-A personal-catalog iOS app for tracking the leather bags and accessories you own from
-[Portland Leather Goods](https://www.portlandleathergoods.com/) — name, size, color, leather
-type, photos, cost/value, plus QR self-labeling and barcode capture to speed up cataloging.
-Think "closet inventory / collection tracker" for one leather brand's ecosystem.
+An early-development iOS preview for cataloging a personal collection of leather bags and
+accessories: names, sizes, colors, leather types, photos, cost/value, ratings, QR self-labeling,
+and barcode capture.
 
 > **Unofficial fan project — not affiliated with or endorsed by Portland Leather Goods.**
-> This is a personal tool built by a customer. It will **not** be publicly released unless and
-> until PLG grants permission to use their product names and imagery. Scraped reference data
-> lives in `research/` and is used only for local development. The app name uses the "PLG"
-> abbreviation, not the full trademark; the internal Xcode module/target is named `Leatherfolio`
-> (Swift identifiers can't contain spaces) while the user-facing display name is "My PLG Collection".
+> This is a personal tool built by a customer. It will not be publicly released unless and until
+> PLG grants permission to use its product names and imagery. Scraped reference data lives in
+> `research/` for local development only.
 
-## Status: v1 Complete
+## Status
 
-| Phase / Task | State |
-|---|---|
-| Design spec, master plan, phase plans | ✅ Complete (`docs/superpowers/`) |
-| Catalog research (37 products via Firecrawl) | ✅ Complete (`research/`) |
-| Phase 0-1 — Core Catalog MVP | ✅ Complete (`Item`/`Photo`/`Tag`, `ImageStore`, grid, add/edit, detail, navigation) |
-| Phase 2 — Catalog Seed & Stats | ✅ Complete (`plg_catalog.json`, `CatalogSeed`, cascading pickers, `CollectionStats`) |
-| Phase 3 — QR Labels & Scanning | ✅ Complete (`QRService`, `ScanRouter`, `ScannerView`, QR export, UPC capture) |
-| Phase 4 — Organize, Stats UI, Design & A11y | ✅ Complete (`ItemFilter`, `FilterSheetView`, `StatsView`, warm editorial theme, VoiceOver) |
+This repository is an **early development preview**, not a released or feature-complete product.
+Core local workflows are implemented and covered by automated tests, but manual accessibility,
+physical-camera, CloudKit, signing, and permission gates remain. See the verification checklist
+below for the exact boundary.
 
 ## Architecture
 
-- **SwiftUI + SwiftData**, local-first. The SwiftData schema is CloudKit-shaped from day one
-  (every property optional-or-defaulted, every relationship optional, no unique constraints) so
-  iCloud sync can be switched on with a one-line change once app signing is set up. Sync starts
-  **off** (`cloudKitDatabase: .none`).
-- **Photos** are stored as external files (`@Attribute(.externalStorage)`, mapped to CKAsset under
-  sync); grids render downsized ~400px thumbnails via `ImageStore`, never full-res in a scroll list.
-- **QR self-labeling** (planned): each item gets an app-generated QR encoding
-  `leatherfolio://item/<uuid>`; scanning it opens that item. UPC barcodes are captured but not
-  looked up in v1 (PLG products aren't reliably in public UPC databases).
-- **Zero third-party dependencies** in the app target — everything is first-party Apple frameworks
-  (SwiftData, VisionKit, Core Image, PhotosUI, Swift Charts).
-- **XcodeGen** owns the project: `project.yml` is the source of truth and `Leatherfolio.xcodeproj`
-  is generated and git-ignored.
+- **SwiftUI + SwiftData**, local-first. The schema is shaped for a possible future CloudKit
+  migration, but sync is explicitly **off** (`cloudKitDatabase: .none`).
+- **Photos** use SwiftData external storage for originals and `ImageStore` for downsized thumbnail
+  caching; grids do not intentionally decode full-resolution photos.
+- **QR self-labeling** gives each item a `leatherfolio://item/<uuid>` label; scanning a known label
+  opens that item. UPC barcodes are captured, with network lookup intentionally unimplemented.
+- **Zero third-party app dependencies**. The app uses Apple frameworks including SwiftUI,
+  SwiftData, VisionKit, Core Image, PhotosUI, and Swift Charts.
+- **XcodeGen** owns the project. `project.yml` is the source of truth and the generated
+  `Leatherfolio.xcodeproj` is ignored.
 
-## Building
+## Build and test
 
-Requirements: macOS with Xcode, and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Requirements: macOS with Xcode, an iOS simulator, and
+[XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
-# one-time tooling
 brew install xcodegen
-
-# generate the Xcode project from project.yml (re-run after adding/removing files)
 xcodegen generate
 
-# build
 xcodebuild -project Leatherfolio.xcodeproj -scheme Leatherfolio \
-  -destination 'platform=iOS Simulator,name=iPhone 17' build
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath .derived-data/build build
 
-# test
 xcodebuild -project Leatherfolio.xcodeproj -scheme Leatherfolio \
-  -destination 'platform=iOS Simulator,name=iPhone 17' test
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath .derived-data/test test
 ```
 
-Notes:
-- **Deployment target:** iOS 18.0, Swift 6.
-- **Simulator name:** substitute any installed iPhone simulator
-  (`xcrun simctl list devices available`). Examples here use `iPhone 17`.
+Substitute any available simulator from `xcrun simctl list devices available`. The deployment
+target is iOS 18 and the language mode is Swift 6.
+
+### Regenerate the app icon
+
+The committed icon is generated with Swift plus AppKit/CoreGraphics only:
+
+```bash
+swift Scripts/generate_app_icon.swift
+```
+
+The script deterministically writes the asset-catalog input at
+`Leatherfolio/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png`. Verify it with:
+
+```bash
+file Leatherfolio/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+sips -g pixelWidth -g pixelHeight -g hasAlpha -g space \
+  Leatherfolio/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+```
+
+Expected metadata: 1024×1024, RGB, with no alpha channel.
+
+## Verification and release checklist
+
+Automated checks prove compilation and covered behavior; they do not prove simulator rendering,
+VoiceOver output, physical camera behavior, CloudKit sync, signing, or release permission.
+
+### Automated evidence
+
+- [x] Fresh full XCTest suite passed: 156 tests, 0 failures (2026-07-22, iPhone 17 Pro
+  simulator running iOS 26.4).
+- [x] Fresh simulator build succeeded from the generated project (2026-07-22, same simulator).
+- [x] App icon generator reproduced a byte-identical 1024×1024 opaque RGB PNG on the current
+  development machine (2026-07-22).
+
+### Simulator checks — pending
+
+- [ ] Complete add/edit/delete, QR routing, scanner fallback, filtering, stats, and relaunch smoke.
+- [ ] Inspect light and dark appearances for clipping or contrast regressions.
+- [ ] At the largest accessibility Dynamic Type size, confirm the grid collapses to one column and
+  names, specs, controls, sheets, and detail content remain readable without clipping.
+- [ ] With VoiceOver/Accessibility Inspector, confirm cell composition, carousel photo captions,
+  item-specific QR labels, and the adjustable rating action.
+
+### Physical device checks — pending
+
+- [ ] Verify camera permission grant/denial/recovery on supported hardware.
+- [ ] Scan a printed Leatherfolio QR label and representative UPC barcodes.
+- [ ] Capture and import representative photos, then verify memory behavior with multiple items.
+
+### CloudKit and signing — pending
+
+- [ ] Enroll/configure Apple Developer signing and choose the production CloudKit container.
+- [ ] Add the iCloud capability and CloudKit container to `project.yml`; keep sync off until then.
+- [ ] Verify add/edit/delete propagation in both directions on two signed-in devices.
+- [ ] Verify signed-out and iCloud-account-change behavior and user-facing copy.
+
+### Release permission — pending
+
+- [ ] Obtain written PLG permission for any public distribution of product names, seed data, or
+  imagery. Until then, do not publish to the App Store or public TestFlight.
 
 ## Repository layout
 
-```
-docs/superpowers/
-  specs/    design spec (the authoritative description of what's being built)
-  plans/    master plan + phase-by-phase implementation plans
-research/
-  plg_products.json       37 scraped PLG products (dev reference only)
-  plg_catalog_notes.md    catalog structure, size/color/leather notes
-  images/                 sample product images, one per category
-Leatherfolio/             the app source (App/, Models/, Services/, Features/, Resources/)
-LeatherfolioTests/        unit tests
-project.yml               XcodeGen project definition (source of truth)
+```text
+docs/superpowers/    design spec and implementation plans
+research/            private development reference data and sample imagery
+Leatherfolio/        app source and bundled resources
+LeatherfolioTests/   automated tests
+Scripts/             reproducible local asset tooling
+project.yml          XcodeGen source of truth
 ```
 
-## Roadmap
-
-v1 (single-user): add/edit/delete items with photos, curated cascading pickers seeded from real
-catalog data, grid/list collection with filter/sort/search, rich detail view, ratings, "unicorn"
-(grail) flags, cost/value stats, QR self-labeling + scan-to-open, UPC capture, wishlist toggle,
-warm editorial design, Dynamic Type + VoiceOver. iCloud sync flips on before any release.
-
-Later: CloudKit sharing, export/backup, Apple Watch quick-view.
-
-## License / usage
+## License and usage
 
 Private, personal project. Reference data in `research/` is not for redistribution. Do not ship or
-publish this app or its bundled brand references without Portland Leather Goods' permission.
+publish the app or bundled brand references without Portland Leather Goods' permission.

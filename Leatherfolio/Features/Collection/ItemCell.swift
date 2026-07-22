@@ -44,15 +44,17 @@ struct ItemCell: View {
                     .frame(maxWidth: .infinity)
                     .aspectRatio(1, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .accessibilityHidden(true)
                 if item.isUnicorn {
                     UnicornBadge()
                         .padding(6)
+                        .accessibilityHidden(true)
                 }
             }
             HStack(spacing: 4) {
                 Text(item.name.isEmpty ? "Untitled" : item.name)
                     .font(.headline)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 if item.favorite {
                     Image(systemName: "heart.fill")
@@ -64,7 +66,7 @@ struct ItemCell: View {
             Text(specLine)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .task(id: item.primaryPhoto?.id) { [requestedPhotoID = item.primaryPhoto?.id] in
             await loadThumbnail(for: requestedPhotoID)
@@ -125,10 +127,10 @@ struct UnicornBadge: View {
     var body: some View {
         HStack(spacing: 2) {
             Image(systemName: "star.fill")
-                .font(.system(size: 9))
+                .font(.caption2)
                 .foregroundStyle(.yellow)
             Text("🦄")
-                .font(.system(size: 11))
+                .font(.caption)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)

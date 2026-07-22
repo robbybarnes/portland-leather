@@ -5,6 +5,7 @@ struct ItemDetailView: View {
     @Bindable var item: Item
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingEdit = false
     @State private var showingDeleteConfirmation = false
     @State private var showingQRLabel = false
@@ -91,14 +92,21 @@ struct ItemDetailView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color(.secondarySystemBackground))
                 Image(systemName: "bag")
-                    .font(.system(size: 48))
+                    .font(.largeTitle)
                     .foregroundStyle(.tertiary)
             }
             .frame(height: 280)
+            .accessibilityHidden(true)
         } else {
+            let photos = sortedPhotos
             TabView {
-                ForEach(sortedPhotos) { photo in
-                    DetailPhotoView(photo: photo)
+                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                    DetailPhotoView(
+                        photo: photo,
+                        accessibilityLabel: AccessibilityText.photoLabel(
+                            caption: photo.caption,
+                            index: index,
+                            count: photos.count))
                 }
             }
             .tabViewStyle(.page)
@@ -108,15 +116,18 @@ struct ItemDetailView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(item.name.isEmpty ? "Untitled" : item.name)
                 .font(.display(.largeTitle))
-            if item.isUnicorn { UnicornBadge() }
-            Spacer()
-            if item.favorite {
-                Image(systemName: "heart.fill")
-                    .foregroundStyle(.red)
-                    .accessibilityLabel("Favorite")
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                if item.isUnicorn { UnicornBadge() }
+                Spacer()
+                if item.favorite {
+                    Image(systemName: "heart.fill")
+                        .foregroundStyle(.red)
+                        .accessibilityLabel("Favorite")
+                }
             }
         }
     }
@@ -142,14 +153,27 @@ struct ItemDetailView: View {
     }
 
     private var ratingRow: some View {
-        HStack {
-            Text("Rating").font(.headline)
-            Spacer()
-            RatingControl(rating: $item.rating)
-                .onChange(of: item.rating) {
-                    item.updatedAt = .now
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Rating").font(.headline)
+                    ratingControl
                 }
+            } else {
+                HStack {
+                    Text("Rating").font(.headline)
+                    Spacer()
+                    ratingControl
+                }
+            }
         }
+    }
+
+    private var ratingControl: some View {
+        RatingControl(rating: $item.rating)
+            .onChange(of: item.rating) {
+                item.updatedAt = .now
+            }
     }
 
     private var costsBlock: some View {
@@ -160,12 +184,12 @@ struct ItemDetailView: View {
                 costRow("Estimated value", item.estimatedValue)
                 if let delta = item.valueDelta {
                     Divider()
-                    HStack {
-                        Text("Value delta").font(.subheadline.bold())
-                        Spacer()
+                    LabeledContent {
                         Text((delta >= 0 ? "+" : "") + delta.currencyDisplay)
                             .font(.subheadline.bold())
-                            .foregroundStyle(delta >= 0 ? .green : .red)
+                            .foregroundStyle(delta >= 0 ? Theme.gain : Theme.loss)
+                    } label: {
+                        Text("Value delta").font(.subheadline.bold())
                     }
                 }
             }
@@ -173,12 +197,12 @@ struct ItemDetailView: View {
     }
 
     private func costRow(_ label: String, _ value: Decimal?) -> some View {
-        HStack {
-            Text(label).font(.subheadline)
-            Spacer()
+        LabeledContent {
             Text(value?.currencyDisplay ?? "—")
                 .font(.subheadline)
                 .foregroundStyle(value == nil ? .secondary : .primary)
+        } label: {
+            Text(label).font(.subheadline)
         }
     }
 
@@ -194,6 +218,7 @@ struct ItemDetailView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 88, height: 88)
+                        .accessibilityHidden(true)
                 }
                 VStack(alignment: .leading) {
                     Text("QR Label")
@@ -206,7 +231,8 @@ struct ItemDetailView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("QR label. Tap to enlarge or export.")
+        .accessibilityLabel(AccessibilityText.qrLabel(itemName: item.name))
+        .accessibilityHint("Enlarges the label and offers export actions")
         .sheet(isPresented: $showingQRLabel) {
             QRLabelSheet(item: item)
         }
@@ -243,6 +269,7 @@ struct ItemDetailView: View {
 
 private struct DetailPhotoView: View {
     let photo: Photo
+    let accessibilityLabel: String
     @State private var image: UIImage?
 
     var body: some View {
@@ -255,6 +282,9 @@ private struct DetailPhotoView: View {
                 Color(.secondarySystemBackground)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(.isImage)
         .task(id: photo.id) {
             let requestedPhotoID = photo.id
             guard let sourceData = photo.imageData else {

@@ -10,15 +10,6 @@ enum AppConfig {
 
 @MainActor
 enum AppModelContainer {
-    /// The app's on-disk container. Tests use make(inMemory: true) instead.
-    static let shared: ModelContainer = {
-        do {
-            return try make(inMemory: false)
-        } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
-        }
-    }()
-
     static func configuration(
         inMemory: Bool,
         storeURL: URL? = nil

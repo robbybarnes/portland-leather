@@ -16,12 +16,12 @@ struct QRLabelSheet: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: 280)
-                        .accessibilityLabel("QR label for \(item.name)")
-                    Text(item.name)
+                        .accessibilityLabel(AccessibilityText.qrLabel(itemName: item.name))
+                    Text(displayName)
                         .font(.headline)
                     ShareLink(
                         item: image,
-                        preview: SharePreview("Leatherfolio label — \(item.name)", image: image)
+                        preview: SharePreview("Leatherfolio label — \(displayName)", image: image)
                     ) {
                         Label("Export Label", systemImage: "square.and.arrow.up")
                     }
@@ -39,5 +39,9 @@ struct QRLabelSheet: View {
                 }
             }
         }
+    }
+
+    private var displayName: String {
+        item.name.isEmpty ? "Untitled item" : item.name
     }
 }

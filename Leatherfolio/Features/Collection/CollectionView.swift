@@ -297,12 +297,15 @@ struct ItemRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name.isEmpty ? "Untitled" : item.name)
                     .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text([item.size, item.color, item.leatherType?.rawValue]
                         .compactMap { $0 }
                         .joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .layoutPriority(1)
             Spacer()
             if item.favorite {
                 Image(systemName: "heart.fill").foregroundStyle(.pink)
