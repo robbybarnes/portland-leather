@@ -32,10 +32,15 @@ enum AccessibilityText {
 
     /// Carousel photo label: the caption when present, else "Photo 2 of 4".
     static func photoLabel(caption: String?, index: Int, count: Int) -> String {
-        if let caption, !caption.trimmingCharacters(in: .whitespaces).isEmpty {
-            return caption
+        if let caption {
+            let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
         }
         return "Photo \(index + 1) of \(count)"
+    }
+
+    static func photoEditorContext(caption: String?, index: Int, count: Int) -> String {
+        photoLabel(caption: caption, index: index, count: count)
     }
 
     static func qrLabel(itemName: String) -> String {
@@ -43,29 +48,35 @@ enum AccessibilityText {
         return "QR label for \(name.isEmpty ? "Untitled item" : name)"
     }
 
-    static func photoPrimaryAction(isPrimary: Bool) -> AccessibilityActionText {
+    static func photoPrimaryAction(
+        context: String,
+        isPrimary: Bool
+    ) -> AccessibilityActionText {
         if isPrimary {
             AccessibilityActionText(
-                label: "Primary photo",
+                label: "\(context), primary photo",
                 value: "Current primary",
                 hint: "This photo appears first.")
         } else {
             AccessibilityActionText(
-                label: "Make photo primary",
+                label: "Make \(context) primary",
                 value: "Not primary",
                 hint: "Makes this photo appear first.")
         }
     }
 
-    static func photoRemovalAction(isStored: Bool) -> AccessibilityActionText {
+    static func photoRemovalAction(
+        context: String,
+        isStored: Bool
+    ) -> AccessibilityActionText {
         if isStored {
             AccessibilityActionText(
-                label: "Remove saved photo",
+                label: "Remove saved photo, \(context)",
                 value: "Saved photo",
                 hint: "Removes this photo when you save the item.")
         } else {
             AccessibilityActionText(
-                label: "Remove new photo",
+                label: "Remove new photo, \(context)",
                 value: "New photo",
                 hint: "Removes this photo before it is saved.")
         }

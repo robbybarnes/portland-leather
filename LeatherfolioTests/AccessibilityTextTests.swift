@@ -73,6 +73,21 @@ final class AccessibilityTextTests: XCTestCase {
         )
     }
 
+    func testPhotoEditorContextTrimsCaptionAndFallsBackToCombinedPosition() {
+        XCTAssertEqual(
+            AccessibilityText.photoEditorContext(
+                caption: "  Front pocket detail \n",
+                index: 0,
+                count: 4),
+            "Front pocket detail")
+        XCTAssertEqual(
+            AccessibilityText.photoEditorContext(
+                caption: " \n ",
+                index: 1,
+                count: 4),
+            "Photo 2 of 4")
+    }
+
     func testQRLabelIdentifiesNamedAndUntitledItems() {
         XCTAssertEqual(
             AccessibilityText.qrLabel(itemName: "Willow Tote"),
@@ -85,26 +100,65 @@ final class AccessibilityTextTests: XCTestCase {
     }
 
     func testPhotoEditorPrimaryActionDistinguishesCurrentAndMakePrimary() {
-        let current = AccessibilityText.photoPrimaryAction(isPrimary: true)
-        XCTAssertEqual(current.label, "Primary photo")
+        let current = AccessibilityText.photoPrimaryAction(
+            context: "Front pocket detail",
+            isPrimary: true)
+        XCTAssertEqual(current.label, "Front pocket detail, primary photo")
         XCTAssertEqual(current.value, "Current primary")
         XCTAssertEqual(current.hint, "This photo appears first.")
 
-        let available = AccessibilityText.photoPrimaryAction(isPrimary: false)
-        XCTAssertEqual(available.label, "Make photo primary")
+        let available = AccessibilityText.photoPrimaryAction(
+            context: "Photo 2 of 4",
+            isPrimary: false)
+        XCTAssertEqual(available.label, "Make Photo 2 of 4 primary")
         XCTAssertEqual(available.value, "Not primary")
         XCTAssertEqual(available.hint, "Makes this photo appear first.")
     }
 
     func testPhotoEditorRemovalActionDistinguishesSavedAndNewPhotos() {
-        let saved = AccessibilityText.photoRemovalAction(isStored: true)
-        XCTAssertEqual(saved.label, "Remove saved photo")
+        let saved = AccessibilityText.photoRemovalAction(
+            context: "Front pocket detail",
+            isStored: true)
+        XCTAssertEqual(saved.label, "Remove saved photo, Front pocket detail")
         XCTAssertEqual(saved.value, "Saved photo")
         XCTAssertEqual(saved.hint, "Removes this photo when you save the item.")
 
-        let newlyAdded = AccessibilityText.photoRemovalAction(isStored: false)
-        XCTAssertEqual(newlyAdded.label, "Remove new photo")
+        let newlyAdded = AccessibilityText.photoRemovalAction(
+            context: "Photo 2 of 4",
+            isStored: false)
+        XCTAssertEqual(newlyAdded.label, "Remove new photo, Photo 2 of 4")
         XCTAssertEqual(newlyAdded.value, "New photo")
         XCTAssertEqual(newlyAdded.hint, "Removes this photo before it is saved.")
+    }
+
+    func testPhotoEditorActionsAreDistinctAcrossBlankCaptionPhotos() {
+        let firstContext = AccessibilityText.photoEditorContext(
+            caption: nil,
+            index: 0,
+            count: 2)
+        let secondContext = AccessibilityText.photoEditorContext(
+            caption: " ",
+            index: 1,
+            count: 2)
+
+        let firstPrimary = AccessibilityText.photoPrimaryAction(
+            context: firstContext,
+            isPrimary: false)
+        let secondPrimary = AccessibilityText.photoPrimaryAction(
+            context: secondContext,
+            isPrimary: false)
+        let firstRemoval = AccessibilityText.photoRemovalAction(
+            context: firstContext,
+            isStored: true)
+        let secondRemoval = AccessibilityText.photoRemovalAction(
+            context: secondContext,
+            isStored: false)
+
+        XCTAssertEqual(firstPrimary.label, "Make Photo 1 of 2 primary")
+        XCTAssertEqual(secondPrimary.label, "Make Photo 2 of 2 primary")
+        XCTAssertNotEqual(firstPrimary.label, secondPrimary.label)
+        XCTAssertEqual(firstRemoval.label, "Remove saved photo, Photo 1 of 2")
+        XCTAssertEqual(secondRemoval.label, "Remove new photo, Photo 2 of 2")
+        XCTAssertNotEqual(firstRemoval.label, secondRemoval.label)
     }
 }

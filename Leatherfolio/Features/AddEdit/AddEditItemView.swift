@@ -91,15 +91,26 @@ struct AddEditItemView: View {
     // MARK: Sections
 
     private var photosSection: some View {
-        Section("Photos") {
-            if !model.visibleExistingPhotos.isEmpty || !model.queuedPhotos.isEmpty {
+        let existingPhotos = model.visibleExistingPhotos
+        let queuedPhotos = model.queuedPhotos
+        let photoCount = existingPhotos.count + queuedPhotos.count
+        return Section("Photos") {
+            if !existingPhotos.isEmpty || !queuedPhotos.isEmpty {
                 ScrollView(.horizontal) {
                     HStack(spacing: 8) {
-                        ForEach(model.visibleExistingPhotos) { draft in
-                            ExistingPhotoEditorCard(model: model, draft: draft)
+                        ForEach(Array(existingPhotos.enumerated()), id: \.element.id) { index, draft in
+                            ExistingPhotoEditorCard(
+                                model: model,
+                                draft: draft,
+                                photoIndex: index,
+                                photoCount: photoCount)
                         }
-                        ForEach(model.queuedPhotos) { draft in
-                            QueuedPhotoEditorCard(model: model, draft: draft)
+                        ForEach(Array(queuedPhotos.enumerated()), id: \.element.id) { index, draft in
+                            QueuedPhotoEditorCard(
+                                model: model,
+                                draft: draft,
+                                photoIndex: existingPhotos.count + index,
+                                photoCount: photoCount)
                         }
                     }
                 }
@@ -272,15 +283,22 @@ private enum PhotoImportLoadError: Error {
 private struct ExistingPhotoEditorCard: View {
     @Bindable var model: AddEditItemModel
     let draft: ExistingPhotoDraft
+    let photoIndex: Int
+    let photoCount: Int
     @State private var image: UIImage?
 
     var body: some View {
+        let context = AccessibilityText.photoEditorContext(
+            caption: model.caption(for: draft.id),
+            index: photoIndex,
+            count: photoCount)
         photoEditorCard(
             id: draft.id,
             caption: Binding(
                 get: { model.caption(for: draft.id) },
                 set: { model.updateCaption($0, for: draft.id) }),
             isPrimary: model.primaryPhotoID == draft.id,
+            context: context,
             remove: { model.removeExistingPhoto(id: draft.id) })
         .task(id: draft.id) {
             let requestedPhotoID = draft.id
@@ -305,16 +323,22 @@ private struct ExistingPhotoEditorCard: View {
         id: UUID,
         caption: Binding<String>,
         isPrimary: Bool,
+        context: String,
         remove: @escaping () -> Void
     ) -> some View {
-        let primaryAction = AccessibilityText.photoPrimaryAction(isPrimary: isPrimary)
-        let removalAction = AccessibilityText.photoRemovalAction(isStored: true)
+        let primaryAction = AccessibilityText.photoPrimaryAction(
+            context: context,
+            isPrimary: isPrimary)
+        let removalAction = AccessibilityText.photoRemovalAction(
+            context: context,
+            isStored: true)
         return VStack(spacing: 6) {
             editorImage(image)
                 .accessibilityHidden(true)
             TextField("Caption", text: caption)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 124)
+                .accessibilityLabel("Caption for \(context)")
             HStack {
                 Button {
                     model.choosePrimary(photoID: id)
@@ -340,12 +364,22 @@ private struct ExistingPhotoEditorCard: View {
 private struct QueuedPhotoEditorCard: View {
     @Bindable var model: AddEditItemModel
     let draft: QueuedPhoto
+    let photoIndex: Int
+    let photoCount: Int
     @State private var image: UIImage?
 
     var body: some View {
         let isPrimary = model.primaryPhotoID == draft.id
-        let primaryAction = AccessibilityText.photoPrimaryAction(isPrimary: isPrimary)
-        let removalAction = AccessibilityText.photoRemovalAction(isStored: false)
+        let context = AccessibilityText.photoEditorContext(
+            caption: model.caption(for: draft.id),
+            index: photoIndex,
+            count: photoCount)
+        let primaryAction = AccessibilityText.photoPrimaryAction(
+            context: context,
+            isPrimary: isPrimary)
+        let removalAction = AccessibilityText.photoRemovalAction(
+            context: context,
+            isStored: false)
         VStack(spacing: 6) {
             editorImage(image)
                 .accessibilityHidden(true)
@@ -354,6 +388,7 @@ private struct QueuedPhotoEditorCard: View {
                 set: { model.updateCaption($0, for: draft.id) }))
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 124)
+                .accessibilityLabel("Caption for \(context)")
             HStack {
                 Button {
                     model.choosePrimary(photoID: draft.id)

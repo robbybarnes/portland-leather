@@ -85,6 +85,8 @@ final class CloudKitRulesTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let storeURL = directory.appending(path: "pre-catalog-line.store")
         let itemID = UUID()
+        let photoID = UUID()
+        let photoData = Data((0..<1_048_593).map { UInt8($0 % 251) })
 
         do {
             let legacyContainer = try LegacyPreCatalogSchema.make(storeURL: storeURL)
@@ -94,8 +96,33 @@ final class CloudKitRulesTests: XCTestCase {
             legacyItem.categoryRaw = ItemCategory.tote.rawValue
             legacyItem.color = "Honey"
             legacyItem.notes = "Created before catalogLineName"
+            let legacyPhoto = LegacyPreCatalogSchema.Photo()
+            legacyPhoto.id = photoID
+            legacyPhoto.imageData = photoData
+            legacyPhoto.caption = "Legacy primary photo"
+            legacyPhoto.isPrimary = true
+            legacyPhoto.item = legacyItem
             legacyContainer.mainContext.insert(legacyItem)
+            legacyContainer.mainContext.insert(legacyPhoto)
             try legacyContainer.mainContext.save()
+        }
+
+        do {
+            let reopenedLegacyContainer = try LegacyPreCatalogSchema.make(storeURL: storeURL)
+            let reopenedLegacyItem = try XCTUnwrap(
+                reopenedLegacyContainer.mainContext
+                    .fetch(FetchDescriptor<LegacyPreCatalogSchema.Item>())
+                    .first { $0.id == itemID })
+            let reopenedLegacyPhoto = try XCTUnwrap(
+                reopenedLegacyContainer.mainContext
+                    .fetch(FetchDescriptor<LegacyPreCatalogSchema.Photo>())
+                    .first { $0.id == photoID })
+            XCTAssertGreaterThanOrEqual(photoData.count, 1_048_576)
+            XCTAssertEqual(reopenedLegacyPhoto.imageData, photoData)
+            XCTAssertEqual(reopenedLegacyPhoto.caption, "Legacy primary photo")
+            XCTAssertTrue(reopenedLegacyPhoto.isPrimary)
+            XCTAssertEqual(reopenedLegacyItem.photos?.map(\.id), [photoID])
+            XCTAssertEqual(reopenedLegacyPhoto.item?.id, itemID)
         }
 
         do {
@@ -105,11 +132,20 @@ final class CloudKitRulesTests: XCTestCase {
             let migratedItem = try XCTUnwrap(
                 migratedContainer.mainContext.fetch(FetchDescriptor<Item>())
                     .first { $0.id == itemID })
+            let migratedPhoto = try XCTUnwrap(
+                migratedContainer.mainContext.fetch(FetchDescriptor<Photo>())
+                    .first { $0.id == photoID })
             XCTAssertEqual(migratedItem.name, "Legacy Custom Name")
             XCTAssertEqual(migratedItem.category, .tote)
             XCTAssertEqual(migratedItem.color, "Honey")
             XCTAssertEqual(migratedItem.notes, "Created before catalogLineName")
             XCTAssertNil(migratedItem.catalogLineName)
+            XCTAssertEqual(migratedPhoto.imageData, photoData)
+            XCTAssertEqual(migratedPhoto.caption, "Legacy primary photo")
+            XCTAssertTrue(migratedPhoto.isPrimary)
+            XCTAssertEqual(migratedItem.photos?.map(\.id), [photoID])
+            XCTAssertEqual(migratedPhoto.item?.id, itemID)
+            XCTAssertEqual(migratedItem.primaryPhoto?.id, photoID)
         }
     }
 
