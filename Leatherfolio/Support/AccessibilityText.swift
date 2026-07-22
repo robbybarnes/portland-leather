@@ -40,7 +40,10 @@ enum AccessibilityText {
     }
 
     static func photoEditorContext(caption: String?, index: Int, count: Int) -> String {
-        photoLabel(caption: caption, index: index, count: count)
+        let position = photoLabel(caption: nil, index: index, count: count)
+        guard let caption else { return position }
+        let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? position : "\(trimmed), \(position)"
     }
 
     static func qrLabel(itemName: String) -> String {

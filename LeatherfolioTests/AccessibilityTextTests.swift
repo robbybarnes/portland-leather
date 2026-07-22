@@ -79,7 +79,7 @@ final class AccessibilityTextTests: XCTestCase {
                 caption: "  Front pocket detail \n",
                 index: 0,
                 count: 4),
-            "Front pocket detail")
+            "Front pocket detail, Photo 1 of 4")
         XCTAssertEqual(
             AccessibilityText.photoEditorContext(
                 caption: " \n ",
@@ -101,9 +101,11 @@ final class AccessibilityTextTests: XCTestCase {
 
     func testPhotoEditorPrimaryActionDistinguishesCurrentAndMakePrimary() {
         let current = AccessibilityText.photoPrimaryAction(
-            context: "Front pocket detail",
+            context: "Front pocket detail, Photo 1 of 4",
             isPrimary: true)
-        XCTAssertEqual(current.label, "Front pocket detail, primary photo")
+        XCTAssertEqual(
+            current.label,
+            "Front pocket detail, Photo 1 of 4, primary photo")
         XCTAssertEqual(current.value, "Current primary")
         XCTAssertEqual(current.hint, "This photo appears first.")
 
@@ -117,9 +119,11 @@ final class AccessibilityTextTests: XCTestCase {
 
     func testPhotoEditorRemovalActionDistinguishesSavedAndNewPhotos() {
         let saved = AccessibilityText.photoRemovalAction(
-            context: "Front pocket detail",
+            context: "Front pocket detail, Photo 1 of 4",
             isStored: true)
-        XCTAssertEqual(saved.label, "Remove saved photo, Front pocket detail")
+        XCTAssertEqual(
+            saved.label,
+            "Remove saved photo, Front pocket detail, Photo 1 of 4")
         XCTAssertEqual(saved.value, "Saved photo")
         XCTAssertEqual(saved.hint, "Removes this photo when you save the item.")
 
@@ -160,5 +164,34 @@ final class AccessibilityTextTests: XCTestCase {
         XCTAssertEqual(firstRemoval.label, "Remove saved photo, Photo 1 of 2")
         XCTAssertEqual(secondRemoval.label, "Remove new photo, Photo 2 of 2")
         XCTAssertNotEqual(firstRemoval.label, secondRemoval.label)
+    }
+
+    func testDuplicateCaptionSavedAndQueuedActionsRetainDistinctOrdinals() {
+        let savedContext = AccessibilityText.photoEditorContext(
+            caption: "  Front pocket detail ",
+            index: 0,
+            count: 2)
+        let queuedContext = AccessibilityText.photoEditorContext(
+            caption: "Front pocket detail",
+            index: 1,
+            count: 2)
+
+        let savedPrimary = AccessibilityText.photoPrimaryAction(
+            context: savedContext,
+            isPrimary: false)
+        let queuedPrimary = AccessibilityText.photoPrimaryAction(
+            context: queuedContext,
+            isPrimary: false)
+        let savedRemoval = AccessibilityText.photoRemovalAction(
+            context: savedContext,
+            isStored: true)
+        let queuedRemoval = AccessibilityText.photoRemovalAction(
+            context: queuedContext,
+            isStored: false)
+
+        XCTAssertEqual(savedContext, "Front pocket detail, Photo 1 of 2")
+        XCTAssertEqual(queuedContext, "Front pocket detail, Photo 2 of 2")
+        XCTAssertNotEqual(savedPrimary.label, queuedPrimary.label)
+        XCTAssertNotEqual(savedRemoval.label, queuedRemoval.label)
     }
 }
