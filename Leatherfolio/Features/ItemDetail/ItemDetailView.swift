@@ -256,11 +256,19 @@ private struct DetailPhotoView: View {
             }
         }
         .task(id: photo.id) {
+            let requestedPhotoID = photo.id
             guard let sourceData = photo.imageData else {
+                guard !Task.isCancelled,
+                      photo.id == requestedPhotoID,
+                      photo.imageData == nil else { return }
                 image = nil
                 return
             }
-            image = await ImageStore.shared.displayImage(from: sourceData)
+            let loadedImage = await ImageStore.shared.displayImage(from: sourceData)
+            guard !Task.isCancelled,
+                  photo.id == requestedPhotoID,
+                  photo.imageData == sourceData else { return }
+            image = loadedImage
         }
     }
 }

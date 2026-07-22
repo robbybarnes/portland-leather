@@ -283,10 +283,21 @@ private struct ExistingPhotoEditorCard: View {
             isPrimary: model.primaryPhotoID == draft.id,
             remove: { model.removeExistingPhoto(id: draft.id) })
         .task(id: draft.id) {
-            guard let photo = model.existingPhoto(for: draft.id) else { return }
-            image = await ImageStore.shared.thumbnail(for: photo.id) {
+            let requestedPhotoID = draft.id
+            guard let photo = model.existingPhoto(for: requestedPhotoID) else {
+                guard !Task.isCancelled,
+                      model.visibleExistingPhotos.contains(where: { $0.id == requestedPhotoID }),
+                      model.existingPhoto(for: requestedPhotoID) == nil else { return }
+                image = nil
+                return
+            }
+            let loadedImage = await ImageStore.shared.thumbnail(for: requestedPhotoID) {
                 photo.imageData
             }
+            guard !Task.isCancelled,
+                  model.visibleExistingPhotos.contains(where: { $0.id == requestedPhotoID }),
+                  model.existingPhoto(for: requestedPhotoID)?.id == requestedPhotoID else { return }
+            image = loadedImage
         }
     }
 
@@ -346,9 +357,15 @@ private struct QueuedPhotoEditorCard: View {
             }
         }
         .task(id: draft.id) {
-            image = await ImageStore.shared.displayImage(
-                from: draft.data,
+            let requestedPhotoID = draft.id
+            let requestedData = draft.data
+            let loadedImage = await ImageStore.shared.displayImage(
+                from: requestedData,
                 maxDimension: ImageStore.thumbnailMaxDimension)
+            guard !Task.isCancelled,
+                  model.queuedPhotos.first(where: { $0.id == requestedPhotoID })?.data
+                    == requestedData else { return }
+            image = loadedImage
         }
     }
 }

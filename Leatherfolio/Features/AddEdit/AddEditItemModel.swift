@@ -12,11 +12,20 @@ struct QueuedPhoto: Identifiable, Equatable {
     let id: UUID
     var data: Data
     var caption: String
+    var preparedData: Data?
 
-    init(id: UUID = UUID(), data: Data, caption: String = "") {
+    var isPrepared: Bool { preparedData != nil }
+
+    init(
+        id: UUID = UUID(),
+        data: Data,
+        caption: String = "",
+        preparedData: Data? = nil
+    ) {
         self.id = id
         self.data = data
         self.caption = caption
+        self.preparedData = preparedData
     }
 }
 
@@ -94,8 +103,8 @@ final class AddEditItemModel {
         appendQueuedPhoto(data)
     }
 
-    private func appendQueuedPhoto(_ data: Data) {
-        let queued = QueuedPhoto(data: data)
+    private func appendQueuedPhoto(_ data: Data, preparedData: Data? = nil) {
+        let queued = QueuedPhoto(data: data, preparedData: preparedData)
         queuedPhotos.append(queued)
         if primaryPhotoID == nil { primaryPhotoID = queued.id }
     }
@@ -162,7 +171,7 @@ final class AddEditItemModel {
                     failureCount += 1
                     continue
                 }
-                appendQueuedPhoto(prepared)
+                appendQueuedPhoto(sourceData, preparedData: prepared)
             } catch {
                 failureCount += 1
             }
@@ -282,17 +291,26 @@ final class AddEditItemModel {
         let queuedSnapshot = queuedPhotos
         let existingDraftSnapshot = existingPhotos
         let selectedPrimarySnapshot = primaryPhotoID
+        let removedIDs = removedExistingPhotoIDs
         var preparedQueued: [(draft: QueuedPhoto, data: Data)] = []
         for draft in queuedSnapshot {
+            if let preparedData = draft.preparedData {
+                preparedQueued.append((draft, preparedData))
+                continue
+            }
             if let prepared = await imageStore.prepareOriginal(from: draft.data) {
-                preparedQueued.append((draft, prepared))
+                var preparedDraft = draft
+                preparedDraft.preparedData = prepared
+                preparedQueued.append((preparedDraft, prepared))
+                if let index = queuedPhotos.firstIndex(where: { $0.id == draft.id }) {
+                    queuedPhotos[index] = preparedDraft
+                }
             }
         }
 
         let item = existingItem ?? Item()
         let original = existingItem.map(ItemSaveSnapshot.init)
         let originalPhotos = (existingItem?.photos ?? []).map(PhotoSaveSnapshot.init)
-        let removedIDs = removedExistingPhotoIDs
 
         do {
             try context.transaction {

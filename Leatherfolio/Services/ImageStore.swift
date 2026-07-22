@@ -6,6 +6,13 @@ import ImageIO
 /// memory and disk caches miss. All cache-file and ImageIO work is isolated
 /// to a non-main actor.
 final class ImageStore: @unchecked Sendable {
+    enum OperationStage: Sendable, Equatable {
+        case cacheLookup
+        case thumbnailDecode
+        case displayDecode
+        case originalPreparation
+    }
+
     static let shared = ImageStore()
 
     static let thumbnailMaxDimension: CGFloat = 400
@@ -14,6 +21,7 @@ final class ImageStore: @unchecked Sendable {
 
     private let worker: ImageStoreWorker
     private let directory: URL
+    private let operationHook: @Sendable (OperationStage) async -> Void
     private let originalPreparer: (@Sendable (Data) async -> Data?)?
 
     /// `executionObserver` is a dependency/execution seam used to verify that
@@ -21,6 +29,7 @@ final class ImageStore: @unchecked Sendable {
     init(
         directory: URL? = nil,
         executionObserver: @escaping @Sendable () -> Void = {},
+        operationHook: @escaping @Sendable (OperationStage) async -> Void = { _ in },
         originalPreparer: (@Sendable (Data) async -> Data?)? = nil
     ) {
         self.directory = directory ?? FileManager.default
@@ -28,7 +37,9 @@ final class ImageStore: @unchecked Sendable {
             .appendingPathComponent("thumbnails", isDirectory: true)
         worker = ImageStoreWorker(
             directory: self.directory,
-            executionObserver: executionObserver)
+            executionObserver: executionObserver,
+            operationHook: operationHook)
+        self.operationHook = operationHook
         self.originalPreparer = originalPreparer
     }
 
@@ -45,11 +56,18 @@ final class ImageStore: @unchecked Sendable {
         for photoID: UUID,
         sourceData: () -> Data?
     ) async -> UIImage? {
-        if let cached = await worker.cachedThumbnail(for: photoID) {
+        guard !Task.isCancelled else { return nil }
+        let cached = await worker.cachedThumbnail(for: photoID)
+        guard !Task.isCancelled else { return nil }
+        if let cached {
             return cached
         }
+        guard !Task.isCancelled else { return nil }
         guard let data = sourceData() else { return nil }
-        return await worker.makeThumbnail(for: photoID, sourceData: data)
+        guard !Task.isCancelled else { return nil }
+        let thumbnail = await worker.makeThumbnail(for: photoID, sourceData: data)
+        guard !Task.isCancelled else { return nil }
+        return thumbnail
     }
 
     /// Compatibility for non-model callers. Collection views must use the
@@ -64,20 +82,33 @@ final class ImageStore: @unchecked Sendable {
         from data: Data,
         maxDimension: CGFloat = ImageStore.detailMaxDimension
     ) async -> UIImage? {
-        await worker.displayImage(from: data, maxDimension: maxDimension)
+        guard !Task.isCancelled else { return nil }
+        let image = await worker.displayImage(from: data, maxDimension: maxDimension)
+        guard !Task.isCancelled else { return nil }
+        return image
     }
 
     /// Downsamples an imported original before any SwiftData transaction.
     func prepareOriginal(from data: Data) async -> Data? {
+        guard !Task.isCancelled else { return nil }
+        await operationHook(.originalPreparation)
+        guard !Task.isCancelled else { return nil }
         if let originalPreparer {
-            return await originalPreparer(data)
+            let prepared = await originalPreparer(data)
+            guard !Task.isCancelled else { return nil }
+            return prepared
         }
-        return await downsampledJPEG(
+        let prepared = await downsampledJPEG(
             from: data, maxDimension: ImageStore.storedOriginalMaxDimension)
+        guard !Task.isCancelled else { return nil }
+        return prepared
     }
 
     func downsampledJPEG(from data: Data, maxDimension: CGFloat) async -> Data? {
-        await worker.downsampledJPEG(from: data, maxDimension: maxDimension)
+        guard !Task.isCancelled else { return nil }
+        let jpegData = await worker.downsampledJPEG(from: data, maxDimension: maxDimension)
+        guard !Task.isCancelled else { return nil }
+        return jpegData
     }
 
     /// Async cache removal used by transactional item/photo cleanup paths.
@@ -111,28 +142,45 @@ private actor ImageStoreWorker {
     private let memoryCache = NSCache<NSString, UIImage>()
     private let directory: URL
     private let executionObserver: @Sendable () -> Void
+    private let operationHook: @Sendable (ImageStore.OperationStage) async -> Void
 
-    init(directory: URL, executionObserver: @escaping @Sendable () -> Void) {
+    init(
+        directory: URL,
+        executionObserver: @escaping @Sendable () -> Void,
+        operationHook: @escaping @Sendable (ImageStore.OperationStage) async -> Void
+    ) {
         self.directory = directory
         self.executionObserver = executionObserver
+        self.operationHook = operationHook
     }
 
-    func cachedThumbnail(for photoID: UUID) -> UIImage? {
+    func cachedThumbnail(for photoID: UUID) async -> UIImage? {
+        guard !Task.isCancelled else { return nil }
+        await operationHook(.cacheLookup)
+        guard !Task.isCancelled else { return nil }
         executionObserver()
         let key = photoID.uuidString as NSString
         if let cached = memoryCache.object(forKey: key) {
-            return cached
+            return Task.isCancelled ? nil : cached
         }
         let fileURL = thumbnailFileURL(for: photoID)
         guard let diskData = try? Data(contentsOf: fileURL),
               let image = UIImage(data: diskData) else {
             return nil
         }
+        guard !Task.isCancelled else { return nil }
         memoryCache.setObject(image, forKey: key)
+        guard !Task.isCancelled else {
+            memoryCache.removeObject(forKey: key)
+            return nil
+        }
         return image
     }
 
-    func makeThumbnail(for photoID: UUID, sourceData: Data) -> UIImage? {
+    func makeThumbnail(for photoID: UUID, sourceData: Data) async -> UIImage? {
+        guard !Task.isCancelled else { return nil }
+        await operationHook(.thumbnailDecode)
+        guard !Task.isCancelled else { return nil }
         executionObserver()
         guard let jpegData = ImageStore.makeDownsampledJPEG(
             from: sourceData,
@@ -140,31 +188,55 @@ private actor ImageStoreWorker {
               let image = UIImage(data: jpegData) else {
             return nil
         }
+        guard !Task.isCancelled else { return nil }
+        let fileURL = thumbnailFileURL(for: photoID)
+        var wroteFile = false
         do {
             try FileManager.default.createDirectory(
                 at: directory, withIntermediateDirectories: true)
-            try jpegData.write(to: thumbnailFileURL(for: photoID), options: .atomic)
+            guard !Task.isCancelled else { return nil }
+            try jpegData.write(to: fileURL, options: .atomic)
+            wroteFile = true
         } catch {
             // A disk-cache failure degrades to the memory cache. The caller's
             // original/photo remains valid and visible for this process.
         }
-        memoryCache.setObject(image, forKey: photoID.uuidString as NSString)
+        guard !Task.isCancelled else {
+            if wroteFile { try? FileManager.default.removeItem(at: fileURL) }
+            return nil
+        }
+        let key = photoID.uuidString as NSString
+        memoryCache.setObject(image, forKey: key)
+        guard !Task.isCancelled else {
+            memoryCache.removeObject(forKey: key)
+            if wroteFile { try? FileManager.default.removeItem(at: fileURL) }
+            return nil
+        }
         return image
     }
 
-    func displayImage(from data: Data, maxDimension: CGFloat) -> UIImage? {
+    func displayImage(from data: Data, maxDimension: CGFloat) async -> UIImage? {
+        guard !Task.isCancelled else { return nil }
+        await operationHook(.displayDecode)
+        guard !Task.isCancelled else { return nil }
         executionObserver()
         guard let jpegData = ImageStore.makeDownsampledJPEG(
             from: data, maxDimension: maxDimension) else {
             return nil
         }
-        return UIImage(data: jpegData)
+        guard !Task.isCancelled else { return nil }
+        let image = UIImage(data: jpegData)
+        guard !Task.isCancelled else { return nil }
+        return image
     }
 
     func downsampledJPEG(from data: Data, maxDimension: CGFloat) -> Data? {
+        guard !Task.isCancelled else { return nil }
         executionObserver()
-        return ImageStore.makeDownsampledJPEG(
+        let jpegData = ImageStore.makeDownsampledJPEG(
             from: data, maxDimension: maxDimension)
+        guard !Task.isCancelled else { return nil }
+        return jpegData
     }
 
     func removeThumbnail(for photoID: UUID) {

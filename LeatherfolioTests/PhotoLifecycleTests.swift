@@ -51,6 +51,24 @@ final class PhotoLifecycleTests: XCTestCase {
         }
     }
 
+    private actor PreparationRecorder {
+        private let preparedResult: Data?
+        private var preparationCount = 0
+
+        init(preparedResult: Data? = nil) {
+            self.preparedResult = preparedResult
+        }
+
+        func prepare(_ data: Data) -> Data? {
+            preparationCount += 1
+            return preparedResult ?? data
+        }
+
+        func count() -> Int {
+            preparationCount
+        }
+    }
+
     private final class ExecutionRecorder: @unchecked Sendable {
         private let lock = NSLock()
         private var values: [Bool] = []
@@ -129,6 +147,33 @@ final class PhotoLifecycleTests: XCTestCase {
         XCTAssertEqual(model.queuedPhotos.count, 1)
         XCTAssertNotNil(model.photoImportErrorMessage)
         XCTAssertFalse(model.isImporting)
+    }
+
+    func testLibraryImportPreparesOriginalOnlyOnceAcrossImportAndSave() async throws {
+        let (container, context) = try makeStore()
+        defer { withExtendedLifetime(container) {} }
+        let sourceData = try makeTestJPEGData(width: 3_000, height: 1_500)
+        let preparedData = try makeTestJPEGData(width: 1_000, height: 500)
+        let recorder = PreparationRecorder(preparedResult: preparedData)
+        let store = ImageStore(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("PhotoLifecycleTests-\(UUID().uuidString)"),
+            originalPreparer: { data in await recorder.prepare(data) })
+        let model = AddEditItemModel(item: nil)
+        model.name = "Tote"
+
+        await model.importPhotos(using: [{ sourceData }], imageStore: store)
+        let countAfterImport = await recorder.count()
+        XCTAssertEqual(countAfterImport, 1)
+        XCTAssertTrue(try XCTUnwrap(model.queuedPhotos.first).isPrepared)
+        XCTAssertEqual(model.queuedPhotos.first?.data, sourceData)
+        XCTAssertEqual(model.queuedPhotos.first?.preparedData, preparedData)
+
+        let saved = try await model.save(in: context, imageStore: store)
+
+        let countAfterSave = await recorder.count()
+        XCTAssertEqual(countAfterSave, 1)
+        XCTAssertEqual(saved.primaryPhoto?.imageData, preparedData)
     }
 
     func testImportDisablesSaveAndSaveCannotRaceIt() async throws {
@@ -243,6 +288,53 @@ final class PhotoLifecycleTests: XCTestCase {
         XCTAssertFalse(context.hasChanges)
     }
 
+    func testFailedSaveRetryReusesPreparedQueuedPhotoWithoutPreparingAgain() async throws {
+        let (container, context) = try makeStore()
+        defer { withExtendedLifetime(container) {} }
+        let rawData = try makeTestJPEGData(width: 3_000, height: 1_500)
+        let preparedData = try makeTestJPEGData(width: 1_000, height: 500)
+        let recorder = PreparationRecorder(preparedResult: preparedData)
+        let store = ImageStore(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("PhotoLifecycleTests-\(UUID().uuidString)"),
+            originalPreparer: { data in await recorder.prepare(data) })
+        let model = AddEditItemModel(item: nil)
+        model.name = "Tote"
+        model.queuePhoto(rawData)
+        let queuedID = try XCTUnwrap(model.queuedPhotos.first?.id)
+        XCTAssertFalse(try XCTUnwrap(model.queuedPhotos.first).isPrepared)
+        model.updateCaption("Front", for: queuedID)
+        model.choosePrimary(photoID: queuedID)
+
+        do {
+            _ = try await model.save(
+                in: context,
+                imageStore: store,
+                saveOperation: { context in
+                    context.processPendingChanges()
+                    throw TestError.expected
+                })
+            XCTFail("Expected deterministic save failure")
+        } catch TestError.expected {}
+
+        let countAfterFailedSave = await recorder.count()
+        XCTAssertEqual(countAfterFailedSave, 1)
+        XCTAssertEqual(model.queuedPhotos.first?.id, queuedID)
+        XCTAssertEqual(model.queuedPhotos.first?.caption, "Front")
+        XCTAssertEqual(model.primaryPhotoID, queuedID)
+        XCTAssertEqual(model.queuedPhotos.first?.data, rawData)
+        XCTAssertEqual(model.queuedPhotos.first?.preparedData, preparedData)
+        XCTAssertTrue(try XCTUnwrap(model.queuedPhotos.first).isPrepared)
+
+        let saved = try await model.save(in: context, imageStore: store)
+
+        let countAfterRetry = await recorder.count()
+        XCTAssertEqual(countAfterRetry, 1)
+        XCTAssertEqual(saved.primaryPhoto?.id, queuedID)
+        XCTAssertEqual(saved.primaryPhoto?.caption, "Front")
+        XCTAssertEqual(saved.primaryPhoto?.imageData, preparedData)
+    }
+
     func testSavePreprocessingUsesOffMainImageIOAndStores2048Maximum() async throws {
         let (container, context) = try makeStore()
         defer { withExtendedLifetime(container) {} }
@@ -309,6 +401,52 @@ final class PhotoLifecycleTests: XCTestCase {
         XCTAssertEqual(saved.photos?.count, 2)
         XCTAssertEqual(saved.primaryPhoto?.id, firstID)
         XCTAssertEqual(saved.photos?.first(where: { $0.id == secondID })?.caption, "Original")
+    }
+
+    /// Structural ownership-boundary regression coverage: isSaving already
+    /// rejects these mutations, but save must also freeze their inputs before
+    /// its first preprocessing suspension point.
+    func testSavingRejectsExistingPhotoEditsDuringPreprocessing() async throws {
+        let (container, context) = try makeStore()
+        defer { withExtendedLifetime(container) {} }
+        let (item, primary, second) = try makeStoredItem(in: context)
+        let gate = PreparationGate()
+        let imageStore = ImageStore(
+            directory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("PhotoLifecycleTests-\(UUID().uuidString)"),
+            originalPreparer: { data in await gate.prepare(data) })
+        let model = AddEditItemModel(item: item)
+        model.queuePhoto(try makeTestJPEGData(width: 1_000, height: 500))
+        let queuedID = try XCTUnwrap(model.queuedPhotos.first?.id)
+
+        var savedItem: Item?
+        var saveError: Error?
+        let saveTask = Task<Void, Never> { @MainActor in
+            do {
+                savedItem = try await model.save(in: context, imageStore: imageStore)
+            } catch {
+                saveError = error
+            }
+        }
+        await gate.waitUntilStarted()
+        XCTAssertTrue(model.isSaving)
+
+        model.removeExistingPhoto(id: primary.id)
+        model.updateCaption("Late edit", for: second.id)
+        model.choosePrimary(photoID: second.id)
+
+        XCTAssertFalse(model.isExistingPhotoRemoved(primary.id))
+        XCTAssertEqual(model.caption(for: second.id), "Back")
+        XCTAssertEqual(model.primaryPhotoID, primary.id)
+
+        await gate.open()
+        await saveTask.value
+        XCTAssertNil(saveError)
+        let saved = try XCTUnwrap(savedItem)
+        XCTAssertEqual(Set(saved.photos?.map(\.id) ?? []), Set([primary.id, second.id, queuedID]))
+        XCTAssertEqual(second.caption, "Back")
+        XCTAssertTrue(primary.isPrimary)
+        XCTAssertFalse(second.isPrimary)
     }
 
     func testSavingRejectsQueuedAdditionAndReplacementDuringPreprocessing() async throws {

@@ -5,6 +5,56 @@ import UIKit
 @MainActor
 final class ImageStoreTests: XCTestCase {
 
+    private actor OperationGate {
+        private let targetStage: ImageStore.OperationStage
+        private var isSuspended = false
+        private var suspensionWaiters: [CheckedContinuation<Void, Never>] = []
+        private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+        init(targetStage: ImageStore.OperationStage) {
+            self.targetStage = targetStage
+        }
+
+        func hook(_ stage: ImageStore.OperationStage) async {
+            guard stage == targetStage else { return }
+            isSuspended = true
+            suspensionWaiters.forEach { $0.resume() }
+            suspensionWaiters.removeAll()
+            await withCheckedContinuation { continuation in
+                releaseContinuation = continuation
+            }
+        }
+
+        func waitUntilSuspended() async {
+            guard !isSuspended else { return }
+            await withCheckedContinuation { continuation in
+                suspensionWaiters.append(continuation)
+            }
+        }
+
+        func open() {
+            releaseContinuation?.resume()
+            releaseContinuation = nil
+        }
+    }
+
+    private final class InvocationRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var invocationCount = 0
+
+        func record() {
+            lock.lock()
+            invocationCount += 1
+            lock.unlock()
+        }
+
+        var count: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return invocationCount
+        }
+    }
+
     private final class ExecutionRecorder: @unchecked Sendable {
         private let lock = NSLock()
         private var values: [Bool] = []
@@ -129,6 +179,53 @@ final class ImageStoreTests: XCTestCase {
         }
         XCTAssertNotNil(diskCached)
         XCTAssertFalse(diskSourceRequested)
+    }
+
+    func testCancelledCacheLookupDoesNotRequestSourceData() async {
+        let gate = OperationGate(targetStage: .cacheLookup)
+        let sourceRequests = InvocationRecorder()
+        let photoID = UUID()
+        let hookedStore = ImageStore(
+            directory: tempDirectory,
+            operationHook: { stage in await gate.hook(stage) })
+
+        let task = Task { @MainActor in
+            await hookedStore.thumbnail(for: photoID) {
+                sourceRequests.record()
+                return nil
+            }
+        }
+        await gate.waitUntilSuspended()
+        task.cancel()
+        await gate.open()
+
+        let result = await task.value
+        XCTAssertNil(result)
+        XCTAssertEqual(sourceRequests.count, 0)
+    }
+
+    func testCancelledThumbnailDecodeDoesNotPublishDiskOrMemoryCache() async throws {
+        let gate = OperationGate(targetStage: .thumbnailDecode)
+        let photoID = UUID()
+        let data = try makeTestJPEGData()
+        let hookedStore = ImageStore(
+            directory: tempDirectory,
+            operationHook: { stage in await gate.hook(stage) })
+
+        let task = Task { @MainActor in
+            await hookedStore.thumbnail(for: photoID) { data }
+        }
+        await gate.waitUntilSuspended()
+        task.cancel()
+        await gate.open()
+
+        let result = await task.value
+        XCTAssertNil(result)
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: hookedStore.thumbnailFileURL(for: photoID).path))
+
+        let cached = await hookedStore.thumbnail(for: photoID, imageData: nil)
+        XCTAssertNil(cached)
     }
 
     func testImageIODiskCacheAndDeletionExecuteOffMain() async throws {

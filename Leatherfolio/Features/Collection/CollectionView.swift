@@ -242,13 +242,23 @@ struct ItemRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(AccessibilityText.label(for: item))
         .task(id: item.primaryPhoto?.id) {
-            if let photo = item.primaryPhoto {
-                thumbnail = await ImageStore.shared.thumbnail(for: photo.id) {
-                    photo.imageData
-                }
-            } else {
-                thumbnail = nil
-            }
+            await loadThumbnail()
         }
+    }
+
+    private func loadThumbnail() async {
+        let requestedPhotoID = item.primaryPhoto?.id
+        guard let requestedPhotoID,
+              let photo = item.primaryPhoto,
+              photo.id == requestedPhotoID else {
+            guard !Task.isCancelled, item.primaryPhoto?.id == requestedPhotoID else { return }
+            thumbnail = nil
+            return
+        }
+        let loadedThumbnail = await ImageStore.shared.thumbnail(for: requestedPhotoID) {
+            photo.imageData
+        }
+        guard !Task.isCancelled, item.primaryPhoto?.id == requestedPhotoID else { return }
+        thumbnail = loadedThumbnail
     }
 }

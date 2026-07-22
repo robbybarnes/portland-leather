@@ -69,13 +69,19 @@ struct ItemCell: View {
     /// Source bytes are accessed lazily only after ImageStore checks both
     /// memory and disk thumbnail caches.
     private func loadThumbnail() async {
-        guard let photo = item.primaryPhoto else {
+        let requestedPhotoID = item.primaryPhoto?.id
+        guard let requestedPhotoID,
+              let photo = item.primaryPhoto,
+              photo.id == requestedPhotoID else {
+            guard !Task.isCancelled, item.primaryPhoto?.id == requestedPhotoID else { return }
             thumbnail = nil
             return
         }
-        thumbnail = await ImageStore.shared.thumbnail(for: photo.id) {
+        let loadedThumbnail = await ImageStore.shared.thumbnail(for: requestedPhotoID) {
             photo.imageData
         }
+        guard !Task.isCancelled, item.primaryPhoto?.id == requestedPhotoID else { return }
+        thumbnail = loadedThumbnail
     }
 }
 
