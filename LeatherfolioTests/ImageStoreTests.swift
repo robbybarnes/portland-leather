@@ -5,6 +5,29 @@ import UIKit
 @MainActor
 final class ImageStoreTests: XCTestCase {
 
+    private final class ExecutionRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [Bool] = []
+
+        func record() {
+            lock.lock()
+            values.append(Thread.isMainThread)
+            lock.unlock()
+        }
+
+        var observedMainThread: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return values.contains(true)
+        }
+
+        var count: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return values.count
+        }
+    }
+
     // nonisolated: XCTestCase's setUpWithError/tearDownWithError overrides are
     // nonisolated even in a @MainActor subclass; they mutate these on a single
     // thread before any test runs, so unsafe opt-out is sound and warning-free.
@@ -34,9 +57,10 @@ final class ImageStoreTests: XCTestCase {
         return try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
     }
 
-    func testDownsampledJPEGCapsMaxDimensionAndKeepsAspect() throws {
+    func testDownsampledJPEGCapsMaxDimensionAndKeepsAspect() async throws {
         let data = try makeTestJPEGData()
-        let result = try XCTUnwrap(store.downsampledJPEG(from: data, maxDimension: 400))
+        let downsampled = await store.downsampledJPEG(from: data, maxDimension: 400)
+        let result = try XCTUnwrap(downsampled)
         let image = try XCTUnwrap(UIImage(data: result))
         XCTAssertLessThanOrEqual(max(image.size.width, image.size.height), 400)
         XCTAssertEqual(image.size.width / image.size.height, 2.0, accuracy: 0.05,
@@ -70,14 +94,68 @@ final class ImageStoreTests: XCTestCase {
         let fileURL = store.thumbnailFileURL(for: photoID)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
 
-        store.deleteThumbnail(for: photoID)
+        await store.removeThumbnail(for: photoID)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
         let afterDelete = await store.thumbnail(for: photoID, imageData: nil)
         XCTAssertNil(afterDelete, "no cache layer may survive deleteThumbnail")
     }
 
-    func testDownsampledJPEGReturnsNilForGarbageData() {
-        XCTAssertNil(store.downsampledJPEG(from: Data([0x00, 0x01, 0x02]), maxDimension: 400))
+    func testDownsampledJPEGReturnsNilForGarbageData() async {
+        let result = await store.downsampledJPEG(
+            from: Data([0x00, 0x01, 0x02]), maxDimension: 400)
+        XCTAssertNil(result)
+    }
+
+    func testCachedFirstThumbnailDoesNotRequestSourceDataOnMemoryOrDiskHit() async throws {
+        let data = try makeTestJPEGData()
+        let photoID = UUID()
+        let generated = await store.thumbnail(for: photoID) { data }
+        XCTAssertNotNil(generated)
+
+        var memorySourceRequested = false
+        let memoryCached = await store.thumbnail(for: photoID) {
+            memorySourceRequested = true
+            return nil
+        }
+        XCTAssertNotNil(memoryCached)
+        XCTAssertFalse(memorySourceRequested)
+
+        let diskStore = ImageStore(directory: tempDirectory)
+        var diskSourceRequested = false
+        let diskCached = await diskStore.thumbnail(for: photoID) {
+            diskSourceRequested = true
+            return nil
+        }
+        XCTAssertNotNil(diskCached)
+        XCTAssertFalse(diskSourceRequested)
+    }
+
+    func testImageIODiskCacheAndDeletionExecuteOffMain() async throws {
+        let recorder = ExecutionRecorder()
+        let observedStore = ImageStore(
+            directory: tempDirectory,
+            executionObserver: { recorder.record() })
+        let data = try makeTestJPEGData()
+        let photoID = UUID()
+
+        let thumbnail = await observedStore.thumbnail(for: photoID) { data }
+        XCTAssertNotNil(thumbnail)
+        let displayImage = await observedStore.displayImage(from: data, maxDimension: 960)
+        XCTAssertNotNil(displayImage)
+        await observedStore.removeThumbnail(for: photoID)
+
+        XCTAssertGreaterThanOrEqual(recorder.count, 3)
+        XCTAssertFalse(recorder.observedMainThread)
+    }
+
+    func testDisplayImageUsesBoundedDecodeSize() async throws {
+        let data = try makeTestJPEGData(width: 3_000, height: 1_500)
+
+        let decoded = await store.displayImage(from: data, maxDimension: 960)
+        let image = try XCTUnwrap(decoded)
+
+        XCTAssertLessThanOrEqual(
+            max(image.size.width * image.scale, image.size.height * image.scale), 960)
     }
 }

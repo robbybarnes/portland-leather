@@ -7,7 +7,9 @@ import UIKit
 /// UIImagePickerController.isSourceTypeAvailable(.camera) before presenting
 /// (AddEditItemView hides the button otherwise).
 struct CameraPicker: UIViewControllerRepresentable {
-    let onCapture: (Data) -> Void
+    enum CaptureError: Error { case encodingFailed }
+
+    let onCapture: (Result<Data, Error>) -> Void
     @Environment(\.dismiss) private var dismiss
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
@@ -37,7 +39,9 @@ struct CameraPicker: UIViewControllerRepresentable {
         ) {
             if let image = info[.originalImage] as? UIImage,
                let data = image.jpegData(compressionQuality: 0.9) {
-                parent.onCapture(data)
+                parent.onCapture(.success(data))
+            } else {
+                parent.onCapture(.failure(CaptureError.encodingFailed))
             }
             parent.dismiss()
         }

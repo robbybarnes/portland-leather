@@ -8,6 +8,8 @@ struct ItemDetailView: View {
     @State private var showingEdit = false
     @State private var showingDeleteConfirmation = false
     @State private var showingQRLabel = false
+    @State private var deletionController = ItemDeletionController()
+    @State private var deletionTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -40,6 +42,7 @@ struct ItemDetailView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showingEdit = true }
+                    .disabled(deletionController.isDeleting)
             }
             ToolbarItem(placement: .secondaryAction) {
                 Button(role: .destructive) {
@@ -47,6 +50,7 @@ struct ItemDetailView: View {
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
+                .disabled(deletionController.isDeleting)
             }
         }
         .sheet(isPresented: $showingEdit) {
@@ -60,6 +64,13 @@ struct ItemDetailView: View {
         } message: {
             Text("Its photos are deleted too. This can't be undone.")
         }
+        .alert("Couldn't delete item", isPresented: deletionErrorPresented) {
+            Button("OK", role: .cancel) {
+                deletionController.errorMessage = nil
+            }
+        } message: {
+            Text(deletionController.errorMessage ?? "Nothing was removed; please try again.")
+        }
     }
 
     // MARK: Sections
@@ -71,8 +82,8 @@ struct ItemDetailView: View {
         }
     }
 
-    /// The detail view is the one place full-res originals (Photo.imageData)
-    /// load — grids stay on ImageStore thumbnails.
+    /// Each source blob is copied on the main actor, then ImageIO performs a
+    /// bounded decode on ImageStore's worker actor.
     @ViewBuilder
     private var photoCarousel: some View {
         if sortedPhotos.isEmpty {
@@ -87,13 +98,7 @@ struct ItemDetailView: View {
         } else {
             TabView {
                 ForEach(sortedPhotos) { photo in
-                    if let data = photo.imageData, let image = UIImage(data: data) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        Color(.secondarySystemBackground)
-                    }
+                    DetailPhotoView(photo: photo)
                 }
             }
             .tabViewStyle(.page)
@@ -221,7 +226,41 @@ struct ItemDetailView: View {
     // MARK: Actions
 
     private func deleteItem() {
-        try? item.deleteWithCleanup(in: modelContext)
-        dismiss()
+        guard deletionTask == nil else { return }
+        deletionTask = Task { @MainActor in
+            let shouldDismiss = await deletionController.delete(item, in: modelContext)
+            deletionTask = nil
+            if shouldDismiss { dismiss() }
+        }
+    }
+
+    private var deletionErrorPresented: Binding<Bool> {
+        Binding(
+            get: { deletionController.errorMessage != nil },
+            set: { if !$0 { deletionController.errorMessage = nil } })
+    }
+}
+
+private struct DetailPhotoView: View {
+    let photo: Photo
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Color(.secondarySystemBackground)
+            }
+        }
+        .task(id: photo.id) {
+            guard let sourceData = photo.imageData else {
+                image = nil
+                return
+            }
+            image = await ImageStore.shared.displayImage(from: sourceData)
+        }
     }
 }

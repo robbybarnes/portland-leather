@@ -119,7 +119,7 @@ final class AddEditItemModelCatalogTests: XCTestCase {
         XCTAssertTrue(model.leatherTypeOptions.isEmpty)
     }
 
-    func testFreeTextPathStillSaves() throws {
+    func testFreeTextPathStillSaves() async throws {
         let container = try AppModelContainer.make(inMemory: true)
         let context = container.mainContext
         let model = makeModel()
@@ -127,7 +127,7 @@ final class AddEditItemModelCatalogTests: XCTestCase {
         model.name = "One-off Sample Bag"
         model.color = "Custom Teal"      // not in any catalog line
         model.size = "Bespoke"
-        try model.save(in: context)
+        try await model.save(in: context)
         let items = try context.fetch(FetchDescriptor<Item>())
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items.first?.name, "One-off Sample Bag")
@@ -135,7 +135,7 @@ final class AddEditItemModelCatalogTests: XCTestCase {
         XCTAssertEqual(items.first?.size, "Bespoke")
     }
 
-    func testCatalogAssociationPersistsSeparatelyFromCustomDisplayName() throws {
+    func testCatalogAssociationPersistsSeparatelyFromCustomDisplayName() async throws {
         let container = try AppModelContainer.make(inMemory: true)
         let context = container.mainContext
         let model = makeModel()
@@ -143,7 +143,7 @@ final class AddEditItemModelCatalogTests: XCTestCase {
         model.selectLine(model.catalog.line(named: "Test Tote"))
         model.name = "My Road Trip Bag"
 
-        let item = try model.save(in: context)
+        let item = try await model.save(in: context)
 
         XCTAssertEqual(item.name, "My Road Trip Bag")
         XCTAssertEqual(item.catalogLineName, "Test Tote")

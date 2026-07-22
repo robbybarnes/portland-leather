@@ -243,8 +243,9 @@ struct ItemRow: View {
         .accessibilityLabel(AccessibilityText.label(for: item))
         .task(id: item.primaryPhoto?.id) {
             if let photo = item.primaryPhoto {
-                thumbnail = await ImageStore.shared.thumbnail(for: photo.id,
-                                                              imageData: photo.imageData)
+                thumbnail = await ImageStore.shared.thumbnail(for: photo.id) {
+                    photo.imageData
+                }
             } else {
                 thumbnail = nil
             }

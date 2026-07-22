@@ -36,11 +36,11 @@ final class AddEditItemModelTests: XCTestCase {
         return try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
     }
 
-    func testSaveWithNameOnlyProducesValidItem() throws {
+    func testSaveWithNameOnlyProducesValidItem() async throws {
         let model = AddEditItemModel(item: nil)
         model.name = "  Honey Tote  "
 
-        let item = try model.save(in: context)
+        let item = try await model.save(in: context)
 
         XCTAssertEqual(item.name, "Honey Tote")
         XCTAssertEqual(item.category, .other)
@@ -62,13 +62,13 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertTrue(model.canSave)
     }
 
-    func testSaveParsesDecimalCurrencyFields() throws {
+    func testSaveParsesDecimalCurrencyFields() async throws {
         let model = AddEditItemModel(item: nil)
         model.name = "Wallet"
         model.myCostText = "125.50"
         model.estimatedValueText = "180"
 
-        let item = try model.save(in: context)
+        let item = try await model.save(in: context)
 
         XCTAssertEqual(item.myCost, Decimal(string: "125.50", locale: .current))
         XCTAssertEqual(item.estimatedValue, 180)
@@ -86,7 +86,7 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertEqual(DecimalParsing.decimal(from: text, locale: german), original)
     }
 
-    func testUntouchedGermanLocaleEditPreservesDecimalValues() throws {
+    func testUntouchedGermanLocaleEditPreservesDecimalValues() async throws {
         let german = Locale(identifier: "de_DE")
         let item = Item()
         item.name = "Wallet"
@@ -101,7 +101,7 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertEqual(model.retailCostText, "99,95")
         XCTAssertEqual(model.estimatedValueText, "1500,01")
 
-        _ = try model.save(in: context)
+        _ = try await model.save(in: context)
 
         XCTAssertEqual(item.myCost, Decimal(string: "1234.56", locale: Locale(identifier: "en_US_POSIX")))
         XCTAssertEqual(item.retailCost, Decimal(string: "99.95", locale: Locale(identifier: "en_US_POSIX")))
@@ -109,12 +109,12 @@ final class AddEditItemModelTests: XCTestCase {
                        Decimal(string: "1500.01", locale: Locale(identifier: "en_US_POSIX")))
     }
 
-    func testSaveAttachesDownsampledPrimaryPhoto() throws {
+    func testSaveAttachesDownsampledPrimaryPhoto() async throws {
         let model = AddEditItemModel(item: nil)
         model.name = "Belt Bag"
         model.newPhotoDatas = [try makeTestJPEGData()]
 
-        let item = try model.save(in: context)
+        let item = try await model.save(in: context)
 
         XCTAssertEqual(item.photos?.count, 1)
         let photo = try XCTUnwrap(item.primaryPhoto)
@@ -125,22 +125,22 @@ final class AddEditItemModelTests: XCTestCase {
                                  "originals are stored downsampled to 2048")
     }
 
-    func testUndecodablePhotoIsSkippedButItemStillSaves() throws {
+    func testUndecodablePhotoIsSkippedButItemStillSaves() async throws {
         let model = AddEditItemModel(item: nil)
         model.name = "Cardholder"
         model.newPhotoDatas = [Data([0x00, 0x01, 0x02])]
 
-        let item = try model.save(in: context)
+        let item = try await model.save(in: context)
 
         XCTAssertTrue((item.photos ?? []).isEmpty,
                       "bad image data must not block the item save")
         XCTAssertEqual(try context.fetch(FetchDescriptor<Item>()).count, 1)
     }
 
-    func testEditingExistingItemUpdatesInPlace() throws {
+    func testEditingExistingItemUpdatesInPlace() async throws {
         let create = AddEditItemModel(item: nil)
         create.name = "Original"
-        let item = try create.save(in: context)
+        let item = try await create.save(in: context)
         let firstUpdatedAt = item.updatedAt
 
         let edit = AddEditItemModel(item: item)
@@ -149,7 +149,7 @@ final class AddEditItemModelTests: XCTestCase {
         edit.name = "Renamed"
         edit.rating = 4
         edit.isUnicorn = true
-        let saved = try edit.save(in: context)
+        let saved = try await edit.save(in: context)
 
         XCTAssertEqual(saved.id, item.id)
         XCTAssertEqual(saved.name, "Renamed")
@@ -160,30 +160,33 @@ final class AddEditItemModelTests: XCTestCase {
                        "edit must not create a second item")
     }
 
-    func testSecondPhotoDoesNotStealPrimary() throws {
+    func testSecondPhotoDoesNotStealPrimary() async throws {
         let create = AddEditItemModel(item: nil)
         create.name = "Tote"
         create.newPhotoDatas = [try makeTestJPEGData()]
-        let item = try create.save(in: context)
+        let item = try await create.save(in: context)
         let originalPrimaryID = try XCTUnwrap(item.primaryPhoto?.id)
 
         let edit = AddEditItemModel(item: item)
         edit.newPhotoDatas = [try makeTestJPEGData()]
-        _ = try edit.save(in: context)
+        _ = try await edit.save(in: context)
 
         XCTAssertEqual(item.photos?.count, 2)
         XCTAssertEqual(item.primaryPhoto?.id, originalPrimaryID)
         XCTAssertEqual(item.photos?.filter(\.isPrimary).count, 1)
     }
 
-    func testFailedAddRollsBackPendingObjectsAndKeepsInputsForRetry() throws {
+    func testFailedAddRollsBackPendingObjectsAndKeepsInputsForRetry() async throws {
         let photoData = try makeTestJPEGData()
         let model = AddEditItemModel(item: nil)
         model.name = "Retry Tote"
         model.color = "Honey"
         model.newPhotoDatas = [photoData]
 
-        XCTAssertThrowsError(try model.save(in: context, saveOperation: forceSaveFailure))
+        do {
+            _ = try await model.save(in: context, saveOperation: forceSaveFailure)
+            XCTFail("Expected deterministic save failure")
+        } catch ForcedSaveError.expected {}
         XCTAssertEqual(model.name, "Retry Tote")
         XCTAssertEqual(model.color, "Honey")
         XCTAssertEqual(model.newPhotoDatas, [photoData])
@@ -193,8 +196,10 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<Photo>()), 0,
                        "A failed add must not leave an orphaned Photo")
 
-        XCTAssertThrowsError(try model.save(in: context, saveOperation: forceSaveFailure),
-                             "A second tap must not accumulate another pending Item")
+        do {
+            _ = try await model.save(in: context, saveOperation: forceSaveFailure)
+            XCTFail("A second tap must not accumulate another pending Item")
+        } catch ForcedSaveError.expected {}
         XCTAssertEqual(model.newPhotoDatas, [photoData],
                        "Queued photo input must survive every failed attempt")
         XCTAssertFalse(context.hasChanges)
@@ -203,7 +208,7 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<Photo>()), 0,
                        "Repeated failures must not accumulate orphaned Photos")
 
-        let saved = try model.save(in: context)
+        let saved = try await model.save(in: context)
         let items = try context.fetch(FetchDescriptor<Item>())
         let photos = try context.fetch(FetchDescriptor<Photo>())
         XCTAssertEqual(items.count, 1)
@@ -221,7 +226,7 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertTrue(model.newPhotoDatas.isEmpty)
     }
 
-    func testFailedEditRollsBackItemAndKeepsEditedFormAndPhotoInput() throws {
+    func testFailedEditRollsBackItemAndKeepsEditedFormAndPhotoInput() async throws {
         let photoData = try makeTestJPEGData()
         let item = Item()
         item.name = "Original Name"
@@ -240,7 +245,10 @@ final class AddEditItemModelTests: XCTestCase {
         model.rating = 5
         model.newPhotoDatas = [photoData]
 
-        XCTAssertThrowsError(try model.save(in: context, saveOperation: forceSaveFailure))
+        do {
+            _ = try await model.save(in: context, saveOperation: forceSaveFailure)
+            XCTFail("Expected deterministic save failure")
+        } catch ForcedSaveError.expected {}
         XCTAssertEqual(item.name, "Original Name")
         XCTAssertEqual(item.rating, 2)
         XCTAssertEqual(item.photos?.map(\.id), [originalPhoto.id],
@@ -256,7 +264,7 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertEqual(model.rating, 5)
         XCTAssertEqual(model.newPhotoDatas, [photoData])
 
-        let saved = try model.save(in: context)
+        let saved = try await model.save(in: context)
         let items = try context.fetch(FetchDescriptor<Item>())
         let photos = try context.fetch(FetchDescriptor<Photo>())
         XCTAssertEqual(items.count, 1)

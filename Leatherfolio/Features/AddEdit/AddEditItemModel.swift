@@ -2,12 +2,35 @@ import Foundation
 import Observation
 import SwiftData
 
-/// Form state + save logic for both add and edit, extracted from the view so
-/// the save path is unit-testable without any UI.
+typealias PhotoDataLoader = @Sendable () async throws -> Data
+
+enum PhotoWorkflowError: Error, Equatable {
+    case busy
+}
+
+struct QueuedPhoto: Identifiable, Equatable {
+    let id: UUID
+    var data: Data
+    var caption: String
+
+    init(id: UUID = UUID(), data: Data, caption: String = "") {
+        self.id = id
+        self.data = data
+        self.caption = caption
+    }
+}
+
+struct ExistingPhotoDraft: Identifiable, Equatable {
+    let id: UUID
+    var caption: String
+    var isPrimary: Bool
+}
+
+/// Form state + save logic for both add and edit. SwiftData model access stays
+/// on the main actor; imported bytes cross to ImageStore's worker only as Data.
 @MainActor
 @Observable
 final class AddEditItemModel {
-
     private let locale: Locale
 
     // MARK: Form fields
@@ -39,14 +62,109 @@ final class AddEditItemModel {
     var notes = ""
     var upc = ""
 
-    /// JPEG/HEIC data of photos picked this session, in pick order.
-    var newPhotoDatas: [Data] = []
+    // MARK: Pending photo state
+
+    private(set) var queuedPhotos: [QueuedPhoto] = []
+    private(set) var existingPhotos: [ExistingPhotoDraft] = []
+    private var removedExistingPhotoIDs: Set<UUID> = []
+    private(set) var primaryPhotoID: UUID?
+    private(set) var isImporting = false
+    private(set) var isSaving = false
+    var photoImportErrorMessage: String?
+
+    /// Compatibility with Task A's retry contract. Direct assignments are
+    /// represented as queued photo drafts and survive every failed save.
+    var newPhotoDatas: [Data] {
+        get { queuedPhotos.map(\.data) }
+        set {
+            queuedPhotos = newValue.map { QueuedPhoto(data: $0) }
+            normalizePrimarySelection()
+        }
+    }
+
+    var visibleExistingPhotos: [ExistingPhotoDraft] {
+        existingPhotos.filter { !removedExistingPhotoIDs.contains($0.id) }
+    }
+
+    var isBusy: Bool { isImporting || isSaving }
+
+    func queuePhoto(_ data: Data) {
+        let queued = QueuedPhoto(data: data)
+        queuedPhotos.append(queued)
+        if primaryPhotoID == nil { primaryPhotoID = queued.id }
+    }
+
+    func removeQueuedPhoto(id: UUID) {
+        queuedPhotos.removeAll { $0.id == id }
+        normalizePrimarySelection()
+    }
+
+    func removeExistingPhoto(id: UUID) {
+        guard existingPhotos.contains(where: { $0.id == id }) else { return }
+        removedExistingPhotoIDs.insert(id)
+        normalizePrimarySelection()
+    }
+
+    func isExistingPhotoRemoved(_ id: UUID) -> Bool {
+        removedExistingPhotoIDs.contains(id)
+    }
+
+    func choosePrimary(photoID: UUID) {
+        guard visibleExistingPhotos.contains(where: { $0.id == photoID })
+                || queuedPhotos.contains(where: { $0.id == photoID }) else { return }
+        primaryPhotoID = photoID
+    }
+
+    func updateCaption(_ caption: String, for photoID: UUID) {
+        if let index = existingPhotos.firstIndex(where: { $0.id == photoID }) {
+            existingPhotos[index].caption = caption
+        } else if let index = queuedPhotos.firstIndex(where: { $0.id == photoID }) {
+            queuedPhotos[index].caption = caption
+        }
+    }
+
+    func caption(for photoID: UUID) -> String {
+        existingPhotos.first(where: { $0.id == photoID })?.caption
+            ?? queuedPhotos.first(where: { $0.id == photoID })?.caption
+            ?? ""
+    }
+
+    func existingPhoto(for id: UUID) -> Photo? {
+        existingItem?.photos?.first { $0.id == id }
+    }
+
+    /// Imports sequentially so one picker batch has exactly one tracked owner.
+    /// Failures are accumulated and reported without dropping successful data.
+    func importPhotos(
+        using loaders: [PhotoDataLoader],
+        imageStore: ImageStore = .shared
+    ) async {
+        guard !isBusy else { return }
+        isImporting = true
+        photoImportErrorMessage = nil
+        defer { isImporting = false }
+
+        var failureCount = 0
+        for load in loaders {
+            do {
+                let sourceData = try await load()
+                guard let prepared = await imageStore.prepareOriginal(from: sourceData) else {
+                    failureCount += 1
+                    continue
+                }
+                queuePhoto(prepared)
+            } catch {
+                failureCount += 1
+            }
+        }
+        if failureCount > 0 {
+            let noun = failureCount == 1 ? "photo" : "photos"
+            photoImportErrorMessage = "\(failureCount) \(noun) couldn't be imported. Your other photos and item details are unchanged."
+        }
+    }
 
     // MARK: - Scan capture (Phase 3)
 
-    /// Prefill from a scan: retail barcodes become the UPC (stable identifier,
-    /// spec decision #2 — capture, no lookup in v1); unknown QR payloads are
-    /// attached to notes so no scanned data is ever dropped.
     func applyScanPrefill(code: String, isQR: Bool) {
         if isQR {
             let line = "Scanned code: \(code)"
@@ -58,12 +176,8 @@ final class AddEditItemModel {
 
     // MARK: - UPC lookup seam (v2; NoOp in v1)
 
-    /// Injection seam: tests assign a stub; v2 assigns a real lookup backend.
     var lookup: any ProductLookupService = NoOpProductLookup()
 
-    /// If a UPC was captured, ask the lookup service and prefill name/notes —
-    /// only fields the user hasn't filled, and only non-nil results. With
-    /// NoOpProductLookup this is a no-op, so v1 behavior is unchanged.
     func lookupUPCIfNeeded() async {
         guard !upc.isEmpty else { return }
         guard let info = await lookup.lookup(upc: upc) else { return }
@@ -73,10 +187,7 @@ final class AddEditItemModel {
 
     // MARK: - Catalog-driven picker options (Phase 2)
 
-    /// Injection seam: tests assign a CatalogSeed(data:) fixture.
     var catalog: CatalogSeed = .shared
-
-    /// Name of the selected catalog line; nil = free-form item.
     var selectedLineName: String?
 
     var lineOptions: [CatalogLine] { catalog.lines(in: category) }
@@ -87,15 +198,10 @@ final class AddEditItemModel {
         (selectedLine?.leatherTypes ?? []).compactMap(LeatherType.init(rawValue:))
     }
 
-    /// Select (or deselect with nil) a catalog line. Prefills the name when the
-    /// user hasn't typed one (or typed exactly another line's name), and clears
-    /// any picker choices the new line doesn't offer.
     func selectLine(_ line: CatalogLine?) {
         selectedLineName = line?.name
         guard let line else { return }
-        if name.isEmpty || catalog.line(named: name) != nil {
-            name = line.name
-        }
+        if name.isEmpty || catalog.line(named: name) != nil { name = line.name }
         if !size.isEmpty, !line.sizes.contains(size) { size = "" }
         if !color.isEmpty, !line.colors.contains(color) { color = "" }
         if let leatherType, !line.leatherTypes.contains(leatherType.rawValue) {
@@ -103,7 +209,6 @@ final class AddEditItemModel {
         }
     }
 
-    /// Call after `category` changes: a line from another category can't stay selected.
     func categoryDidChange() {
         guard let selectedLine, selectedLine.category != category.rawValue else { return }
         if name == selectedLine.name { name = "" }
@@ -115,15 +220,15 @@ final class AddEditItemModel {
         selectLine(nil)
     }
 
-    /// Call when loading an existing item for editing: re-links the line whose
-    /// name the item carries so the cascading pickers light up.
     func syncSelectedLineFromName() {
         selectedLineName = catalog.line(named: name)?.name
     }
 
     private(set) var existingItem: Item?
     var isEditing: Bool { existingItem != nil }
-    var canSave: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty }
+    var canSave: Bool {
+        !isBusy && !name.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     init(item: Item?, locale: Locale = .current) {
         self.locale = locale
@@ -147,63 +252,77 @@ final class AddEditItemModel {
         notes = item.notes ?? ""
         upc = item.upc ?? ""
         selectedLineName = item.catalogLineName
-        if selectedLineName == nil {
-            syncSelectedLineFromName()
-        }
+        if selectedLineName == nil { syncSelectedLineFromName() }
+        loadExistingPhotoDrafts(from: item)
     }
 
-    /// Writes the form into a new or existing Item, downsampling (2048 max
-    /// dimension) and attaching any newly picked photos. The first photo an
-    /// item ever gets becomes primary. Photos that fail to decode are
-    /// skipped so the item still saves (spec: never lose user input over an
-    /// image failure).
+    /// Prepares queued bytes on ImageStore's worker, then applies every item
+    /// and photo mutation in the existing SwiftData transaction on MainActor.
+    /// Cache cleanup is deliberately delayed until commit succeeds.
     @discardableResult
     func save(
         in context: ModelContext,
         imageStore: ImageStore = .shared,
         saveOperation: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws -> Item {
+    ) async throws -> Item {
+        guard !isBusy else { throw PhotoWorkflowError.busy }
+        isSaving = true
+        defer { isSaving = false }
+
+        let queuedSnapshot = queuedPhotos
+        var preparedQueued: [(draft: QueuedPhoto, data: Data)] = []
+        for draft in queuedSnapshot {
+            if let prepared = await imageStore.prepareOriginal(from: draft.data) {
+                preparedQueued.append((draft, prepared))
+            }
+        }
+
         let item = existingItem ?? Item()
         let original = existingItem.map(ItemSaveSnapshot.init)
+        let originalPhotos = (existingItem?.photos ?? []).map(PhotoSaveSnapshot.init)
+        let removedIDs = removedExistingPhotoIDs
+
         do {
             try context.transaction {
-                if existingItem == nil {
-                    context.insert(item)
-                }
-                item.name = name.trimmingCharacters(in: .whitespaces)
-                item.catalogLineName = selectedLineName
-                item.category = category
-                item.size = normalized(sizeText)
-                item.color = normalized(colorText)
-                item.leatherType = leatherType
-                item.condition = condition
-                item.rating = rating
-                item.isUnicorn = isUnicorn
-                item.favorite = favorite
-                item.isWishlist = isWishlist
-                item.myCost = DecimalParsing.decimal(from: myCostText, locale: locale)
-                item.retailCost = DecimalParsing.decimal(from: retailCostText, locale: locale)
-                item.estimatedValue = DecimalParsing.decimal(from: estimatedValueText, locale: locale)
-                item.dateAcquired = hasDateAcquired ? dateAcquired : nil
-                item.notes = normalized(notes)
-                item.upc = normalized(upc)
-                item.updatedAt = .now
+                if existingItem == nil { context.insert(item) }
+                applyForm(to: item)
 
-                var hasPrimary = (item.photos ?? []).contains(where: \.isPrimary)
-                for data in newPhotoDatas {
-                    guard let jpeg = imageStore.downsampledJPEG(from: data, maxDimension: 2_048) else {
-                        continue  // undecodable photo: skip it, keep the item
+                let currentPhotos = item.photos ?? []
+                let removedPhotos = currentPhotos.filter { removedIDs.contains($0.id) }
+                let survivingPhotos = currentPhotos.filter { !removedIDs.contains($0.id) }
+                for photo in removedPhotos { context.delete(photo) }
+
+                for photo in survivingPhotos {
+                    if let draft = existingPhotos.first(where: { $0.id == photo.id }) {
+                        photo.caption = normalized(draft.caption)
                     }
+                    photo.isPrimary = false
+                }
+
+                var insertedPhotos: [Photo] = []
+                for prepared in preparedQueued {
                     let photo = Photo()
-                    photo.imageData = jpeg
-                    photo.isPrimary = !hasPrimary
-                    hasPrimary = true
+                    photo.id = prepared.draft.id
+                    photo.imageData = prepared.data
+                    photo.caption = normalized(prepared.draft.caption)
                     photo.item = item
                     context.insert(photo)
+                    insertedPhotos.append(photo)
                 }
+
+                let allSavedPhotos = survivingPhotos + insertedPhotos
+                let validIDs = Set(allSavedPhotos.map(\.id))
+                let selectedPrimary = primaryPhotoID.flatMap {
+                    validIDs.contains($0) ? $0 : nil
+                } ?? allSavedPhotos.first?.id
+                for photo in allSavedPhotos {
+                    photo.isPrimary = photo.id == selectedPrimary
+                }
+                item.photos = allSavedPhotos
                 try saveOperation(context)
             }
         } catch {
+            originalPhotos.forEach { $0.restore() }
             original?.restore(item)
             context.processPendingChanges()
             context.rollback()
@@ -211,14 +330,77 @@ final class AddEditItemModel {
         }
 
         existingItem = item
-        newPhotoDatas.removeAll()
+        queuedPhotos.removeAll()
+        removedExistingPhotoIDs.removeAll()
+        loadExistingPhotoDrafts(from: item)
+        for photoID in removedIDs {
+            await imageStore.removeThumbnail(for: photoID)
+        }
         return item
     }
 
-    /// SwiftData rollback clears pending-change bookkeeping but does not
-    /// reliably refresh an already-referenced model on every supported SDK.
-    /// Restore the edited object first, then rollback the context to discard
-    /// inserted photos and clear the transaction state.
+    private func applyForm(to item: Item) {
+        item.name = name.trimmingCharacters(in: .whitespaces)
+        item.catalogLineName = selectedLineName
+        item.category = category
+        item.size = normalized(sizeText)
+        item.color = normalized(colorText)
+        item.leatherType = leatherType
+        item.condition = condition
+        item.rating = rating
+        item.isUnicorn = isUnicorn
+        item.favorite = favorite
+        item.isWishlist = isWishlist
+        item.myCost = DecimalParsing.decimal(from: myCostText, locale: locale)
+        item.retailCost = DecimalParsing.decimal(from: retailCostText, locale: locale)
+        item.estimatedValue = DecimalParsing.decimal(from: estimatedValueText, locale: locale)
+        item.dateAcquired = hasDateAcquired ? dateAcquired : nil
+        item.notes = normalized(notes)
+        item.upc = normalized(upc)
+        item.updatedAt = .now
+    }
+
+    private func loadExistingPhotoDrafts(from item: Item) {
+        existingPhotos = (item.photos ?? [])
+            .sorted { $0.createdAt < $1.createdAt }
+            .map {
+                ExistingPhotoDraft(
+                    id: $0.id,
+                    caption: $0.caption ?? "",
+                    isPrimary: $0.isPrimary)
+            }
+        primaryPhotoID = item.primaryPhoto?.id
+        normalizePrimarySelection()
+    }
+
+    private func normalizePrimarySelection() {
+        let validIDs = Set(visibleExistingPhotos.map(\.id) + queuedPhotos.map(\.id))
+        if let primaryPhotoID, validIDs.contains(primaryPhotoID) { return }
+        primaryPhotoID = visibleExistingPhotos.first?.id ?? queuedPhotos.first?.id
+    }
+
+    private struct PhotoSaveSnapshot {
+        let photo: Photo
+        let caption: String?
+        let isPrimary: Bool
+        let item: Item?
+
+        init(_ photo: Photo) {
+            self.photo = photo
+            caption = photo.caption
+            isPrimary = photo.isPrimary
+            item = photo.item
+        }
+
+        func restore() {
+            photo.caption = caption
+            photo.isPrimary = isPrimary
+            photo.item = item
+        }
+    }
+
+    /// SwiftData rollback clears pending bookkeeping but does not reliably
+    /// refresh already-referenced models, so restore values before rollback.
     private struct ItemSaveSnapshot {
         let name: String
         let catalogLineName: String?

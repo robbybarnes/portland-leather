@@ -66,15 +66,16 @@ struct ItemCell: View {
         }
     }
 
-    /// Grid cells only ever touch ImageStore thumbnails — never full-res
-    /// Photo.imageData decoding in the scroll path beyond this one pass.
+    /// Source bytes are accessed lazily only after ImageStore checks both
+    /// memory and disk thumbnail caches.
     private func loadThumbnail() async {
         guard let photo = item.primaryPhoto else {
             thumbnail = nil
             return
         }
-        thumbnail = await ImageStore.shared.thumbnail(
-            for: photo.id, imageData: photo.imageData)
+        thumbnail = await ImageStore.shared.thumbnail(for: photo.id) {
+            photo.imageData
+        }
     }
 }
 
