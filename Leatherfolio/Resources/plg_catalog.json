@@ -1,0 +1,163 @@
+[
+  {
+    "name": "Leather Tote Bag",
+    "category": "Tote",
+    "sizes": ["Small", "Medium", "Large", "Oversized"],
+    "colors": ["Honey", "Nutmeg", "Meadow", "Cognac", "Black", "Pebbled Black", "Pebbled Bone", "Coldbrew", "Chestnut", "Evergreen", "Westward Blue", "Cobalt", "Stone", "Chili Red", "Merlot", "Mango", "Sea Glass", "Grizzly"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "August Tote",
+    "category": "Tote",
+    "sizes": ["Medium", "Large"],
+    "colors": ["Nutmeg", "Sienna", "Night Owl", "Cobalt", "Plum", "Bacalar", "Black", "Sea Glass", "Coldbrew", "Meadow", "Stone", "Forest Green", "Mango", "Chocolate Brown", "Cosmo", "Koi"],
+    "leatherTypes": ["Smooth"]
+  },
+  {
+    "name": "Montana Tote",
+    "category": "Tote",
+    "sizes": ["Medium", "Large"],
+    "colors": ["Honey", "Nutmeg", "Cognac", "Pebbled Black", "Coldbrew", "Asheville", "Phoenix", "Sunshine", "Evergreen", "Sienna", "Cowboy Blue", "Westward Blue", "Mango", "Forest Green", "Stone", "Empire"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "Devan Bucket Tote",
+    "category": "Tote",
+    "sizes": ["Small", "Large", "Oversized"],
+    "colors": ["Black", "Bone", "Grizzly", "Sienna", "Plum", "Bacalar", "Boreal", "Nutmeg", "Sunshine", "Cobalt", "Coldbrew", "Chestnut", "Chili Red", "Orchid", "Koi", "Pink Suede", "Lagoon", "Empire"],
+    "leatherTypes": ["Smooth", "Suede"]
+  },
+  {
+    "name": "Crossbody Tote",
+    "category": "Crossbody Tote",
+    "sizes": ["Mini", "Medium", "Original"],
+    "colors": ["Honey", "Cognac", "Nutmeg", "Coldbrew", "Black", "Pebbled Black", "Pebbled Bone", "Bone", "Chestnut", "Sienna", "Cobalt", "Plum", "Meadow", "Chili Red", "Orchid", "Merlot", "Grizzly", "Koi", "Aquarius", "Metallic Greench"],
+    "leatherTypes": ["Smooth", "Pebbled", "Metallic"]
+  },
+  {
+    "name": "Lola Crossbody Tote",
+    "category": "Crossbody Tote",
+    "sizes": [],
+    "colors": ["Chocolate Brown", "Grizzly", "Black", "Pebbled Black", "Cognac", "Honey", "Stone", "Nutmeg", "Coldbrew", "Chestnut", "Sea Glass", "Westward Blue", "Phoenix", "Cowboy Blue", "Merlot", "Night Owl"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "Circle Crossbody",
+    "category": "Crossbody",
+    "sizes": ["Small", "Large"],
+    "colors": ["Honey", "Meadow", "Cognac", "Nutmeg", "Coldbrew", "Pebbled Black", "Black", "Bone", "Cobalt", "Boreal", "Chestnut", "Chili Red", "Deep Water", "Aquarius", "Ruby", "Empire"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "Monaco Crossbody",
+    "category": "Crossbody",
+    "sizes": ["Small", "Large"],
+    "colors": ["Madrone", "Orchid", "Chocolate Brown", "Black", "Sienna", "Nutmeg", "Larkspur", "Cobalt", "Chili Red", "Bone", "Moose", "Evergreen", "Boreal", "Wild Rose", "Blue Joy", "Stone", "Wasabi", "Seafoam"],
+    "leatherTypes": ["Smooth"]
+  },
+  {
+    "name": "Raindrop Crossbody Bag",
+    "category": "Crossbody",
+    "sizes": ["Small", "Large"],
+    "colors": ["Orchid", "Sienna", "Grizzly", "Lagoon", "Bacalar", "Sunshine", "Evergreen", "Cobalt", "Sea Glass", "Nutmeg", "Honey", "Plum", "Bone", "Pebbled Black", "Coldbrew", "Chestnut", "Ruby", "Night Owl"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "Bucket Bag",
+    "category": "Crossbody",
+    "sizes": ["Small", "Large"],
+    "colors": ["Sienna", "Coldbrew", "Asheville", "Cobalt", "Pebbled Black", "Plum", "Boreal", "Nutmeg", "Shadow Lime", "Bacalar", "Skyway", "Orchid", "Pinkaboo", "Butter Bliss"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "Sally Sling Bag",
+    "category": "Belt Bag",
+    "sizes": [],
+    "colors": ["Cognac", "Coldbrew", "Black", "Sea Glass", "Chili Red", "Molino Blue", "Plum", "Pebbled Bone", "Asheville", "Cactus", "Wild Rose", "Oatmilk"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "Koala Sling Bag",
+    "category": "Belt Bag",
+    "sizes": ["Small", "Medium", "Large"],
+    "colors": ["Meadow", "Nutmeg", "Coldbrew", "Honey", "Pebbled Black", "Sienna", "Bacalar", "Cobalt", "Sunshine", "Chili Red", "Orchid", "Pebbled Bone", "Bone", "Sea Glass", "Metallic Greench", "Cowboy Blue"],
+    "leatherTypes": ["Smooth", "Pebbled", "Metallic"]
+  },
+  {
+    "name": "Tote Backpack",
+    "category": "Backpack",
+    "sizes": ["Small", "Large"],
+    "colors": ["Nutmeg", "Sienna", "Honey", "Meadow", "Cognac", "Pebbled Black", "Sea Glass", "Night Owl", "Orchid", "Cobalt", "Lagoon", "Plum", "Black", "Coldbrew", "Chili Red", "Koi"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "Laptop Backpack",
+    "category": "Backpack",
+    "sizes": [],
+    "colors": ["Honey", "Pebbled Black", "Nutmeg", "Molino Blue", "Chili Red", "Night Owl", "Black", "Cognac", "Bacalar", "Forest Green", "Coldbrew", "Orchid", "Cobalt", "Cosmo"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "Women's Bifold Wallet",
+    "category": "Wallet",
+    "sizes": [],
+    "colors": ["Nutmeg", "Coldbrew", "Honey", "Meadow", "Black", "Plum", "Bacalar", "Grizzly", "Koi", "Pebbled Black", "Cognac", "Chestnut", "Boreal", "Deep Water", "Metallic Greench", "Merlot", "Ruby", "English Tan"],
+    "leatherTypes": ["Smooth", "Pebbled", "Metallic"]
+  },
+  {
+    "name": "Mini Bifold Wallet",
+    "category": "Wallet",
+    "sizes": [],
+    "colors": ["Meadow", "Honey", "Nutmeg", "Black", "Plum", "Bacalar", "Grizzly", "Metallic Greench", "Koi", "Cognac", "Coldbrew", "Chestnut", "Boreal", "Pebbled Black", "Ruby", "Merlot"],
+    "leatherTypes": ["Smooth", "Pebbled", "Metallic"]
+  },
+  {
+    "name": "Small Zip Wallet",
+    "category": "Wallet",
+    "sizes": [],
+    "colors": ["Madrone", "Cognac", "Nutmeg", "Chocolate Brown", "Cobalt", "Pebbled Black", "Sunflower", "Plum", "Chestnut", "Sea Glass", "Orchid", "Coldbrew", "Chili Red", "Honey", "Black", "Grizzly"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "Highlander Card Holder",
+    "category": "Cardholder",
+    "sizes": ["Classic", "Deluxe"],
+    "colors": ["Saddlestone", "Trailstone", "Black Rock", "Red Rock"],
+    "leatherTypes": ["Smooth"]
+  },
+  {
+    "name": "Napoli Card Holder",
+    "category": "Cardholder",
+    "sizes": [],
+    "colors": ["Naturale", "Nero", "Marrone", "Toscano"],
+    "leatherTypes": ["Smooth"]
+  },
+  {
+    "name": "Women's Legacy Leather Belt",
+    "category": "Belt",
+    "sizes": ["S", "M", "L", "XL"],
+    "colors": ["Amber", "Pecan", "Umber", "Black"],
+    "leatherTypes": ["Smooth"]
+  },
+  {
+    "name": "Men's Artisan Leather Belt",
+    "category": "Belt",
+    "sizes": ["32", "34", "36", "38", "40", "42", "44"],
+    "colors": ["Java", "Amber", "Jet Black", "Pecan"],
+    "leatherTypes": ["Smooth"]
+  },
+  {
+    "name": "Leather Tassel",
+    "category": "Accessory",
+    "sizes": ["Classic", "Jumbo"],
+    "colors": ["Bacalar", "Orchid", "Cognac", "Honey", "Grizzly", "Pebbled Black", "Cobalt", "Bone", "Chili Red", "Coldbrew", "Black", "Nutmeg", "Chestnut", "Merlot", "Stardust", "Sunflower"],
+    "leatherTypes": ["Smooth", "Pebbled"]
+  },
+  {
+    "name": "Makeup Bag",
+    "category": "Accessory",
+    "sizes": ["Large", "Extra Large"],
+    "colors": ["Cognac", "Nutmeg", "Honey", "Black", "Bone", "Sunshine", "Stone", "Cobalt", "Bacalar", "Metallic Greench", "Ruby", "Meadow", "Deep Water", "Pine"],
+    "leatherTypes": ["Smooth", "Metallic"]
+  }
+]

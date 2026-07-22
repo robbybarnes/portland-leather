@@ -13,7 +13,11 @@ targets:
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - Leatherfolio
+      - path: Leatherfolio
+        excludes:
+          - "Resources/**"
+      - path: Leatherfolio/Resources
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.robbybarnes.leatherfolio
