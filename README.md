@@ -12,21 +12,16 @@ Think "closet inventory / collection tracker" for one leather brand's ecosystem.
 > abbreviation, not the full trademark; the internal Xcode module/target is named `Leatherfolio`
 > (Swift identifiers can't contain spaces) while the user-facing display name is "My PLG Collection".
 
-## Status: work in progress
-
-Phase 0-1 (core catalog MVP) is partially built. This repo currently contains the full design
-documentation, catalog research, and the first slice of app code.
+## Status: v1 Complete
 
 | Phase / Task | State |
 |---|---|
 | Design spec, master plan, phase plans | ✅ Complete (`docs/superpowers/`) |
 | Catalog research (37 products via Firecrawl) | ✅ Complete (`research/`) |
-| Task 1 — XcodeGen project skeleton | ✅ Done, reviewed |
-| Task 2 — SwiftData models (Item/Photo/Tag) | ✅ Done, reviewed, tests green |
-| Task 3 — ImageStore (thumbnail cache) | ✅ Done, reviewed, tests green |
-| Task 4-7 — grid, add/edit, detail, navigation | ⏳ Planned, not yet built |
-| Phase 2-3 — catalog seed + scanning | ⏳ Planned |
-| Phase 4 — filters, stats, design, a11y | ⏳ Planned |
+| Phase 0-1 — Core Catalog MVP | ✅ Complete (`Item`/`Photo`/`Tag`, `ImageStore`, grid, add/edit, detail, navigation) |
+| Phase 2 — Catalog Seed & Stats | ✅ Complete (`plg_catalog.json`, `CatalogSeed`, cascading pickers, `CollectionStats`) |
+| Phase 3 — QR Labels & Scanning | ✅ Complete (`QRService`, `ScanRouter`, `ScannerView`, QR export, UPC capture) |
+| Phase 4 — Organize, Stats UI, Design & A11y | ✅ Complete (`ItemFilter`, `FilterSheetView`, `StatsView`, warm editorial theme, VoiceOver) |
 
 ## Architecture
 
@@ -68,9 +63,6 @@ Notes:
 - **Deployment target:** iOS 18.0, Swift 6.
 - **Simulator name:** substitute any installed iPhone simulator
   (`xcrun simctl list devices available`). Examples here use `iPhone 17`.
-- **Use a stable Xcode (26.x), not the 27 beta.** Xcode 27 Beta 4 traps every SwiftData
-  save in the simulator, which blocks the persistence tests. A released Xcode 26.x avoids this and
-  is fully compatible with the iOS 18 / Swift 6 target.
 
 ## Repository layout
 
