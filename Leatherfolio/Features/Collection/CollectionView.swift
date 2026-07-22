@@ -16,6 +16,7 @@ struct CollectionView: View {
     @State private var showingScanner = false
     @State private var scanPrefill: ScanPrefill?
     @AppStorage("collectionLayout") private var layoutRaw = CollectionLayout.grid.rawValue
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     struct ScanPrefill: Identifiable {
         let id = UUID()
@@ -147,7 +148,9 @@ struct CollectionView: View {
     }
 
     private var gridColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 150), spacing: 12)]
+        dynamicTypeSize.isAccessibilitySize
+            ? [GridItem(.flexible())]
+            : [GridItem(.adaptive(minimum: 150), spacing: 12)]
     }
 
     // MARK: - Toolbar
@@ -229,11 +232,15 @@ struct ItemRow: View {
             Spacer()
             if item.favorite {
                 Image(systemName: "heart.fill").foregroundStyle(.pink)
+                    .accessibilityHidden(true)
             }
             if item.isUnicorn {
                 Image(systemName: "sparkles").foregroundStyle(.purple)
+                    .accessibilityHidden(true)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(AccessibilityText.label(for: item))
         .task(id: item.primaryPhoto?.id) {
             if let photo = item.primaryPhoto {
                 thumbnail = await ImageStore.shared.thumbnail(for: photo.id,

@@ -37,7 +37,8 @@ struct ItemCell: View {
             await loadThumbnail()
         }
         .cardStyle()
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(AccessibilityText.label(for: item))
     }
 
     /// "Medium · Honey" when size/color exist; falls back to the category.
