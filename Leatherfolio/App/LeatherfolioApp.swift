@@ -12,9 +12,7 @@ struct LeatherfolioApp: App {
                 .foregroundStyle(Theme.textPrimary)
                 .environment(router)
                 .onOpenURL { url in
-                    if let itemID = QRService.itemID(fromPayload: url.absoluteString) {
-                        router.open(itemID: itemID)
-                    }
+                    router.handle(url: url)
                 }
         }
         .modelContainer(AppModelContainer.shared)

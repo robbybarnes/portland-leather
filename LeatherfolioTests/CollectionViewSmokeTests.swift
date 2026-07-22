@@ -6,6 +6,61 @@ import SwiftData
 @MainActor
 final class CollectionViewSmokeTests: XCTestCase {
 
+    func testAddPrefillMatchesCurrentCollectionScope() throws {
+        var state = CollectionPresentationState()
+
+        state.presentAdd(in: .wishlist)
+        guard case .add(let wishlistPrefill) = try XCTUnwrap(state.modal) else {
+            return XCTFail("Expected add destination")
+        }
+        XCTAssertTrue(wishlistPrefill.isWishlist)
+
+        state.modal = nil
+        state.presentAdd(in: .owned)
+        guard case .add(let ownedPrefill) = try XCTUnwrap(state.modal) else {
+            return XCTFail("Expected add destination")
+        }
+        XCTAssertFalse(ownedPrefill.isWishlist)
+    }
+
+    func testExistingItemScanWaitsForScannerDismissalBeforeNavigation() {
+        let itemID = UUID()
+        var state = CollectionPresentationState()
+        state.presentScanner()
+
+        state.receiveScan(.existingItem(itemID), in: .owned)
+
+        XCTAssertNil(state.modal)
+        XCTAssertEqual(state.didDismissModal(), itemID)
+        XCTAssertNil(state.modal)
+    }
+
+    func testNewItemScanWaitsForDismissalThenPresentsPrefilledAdd() throws {
+        var state = CollectionPresentationState()
+        state.presentScanner()
+
+        state.receiveScan(
+            .newItem(code: "012345678905", isQR: false),
+            in: .wishlist)
+
+        XCTAssertNil(state.modal)
+        XCTAssertNil(state.didDismissModal())
+        guard case .add(let prefill) = try XCTUnwrap(state.modal) else {
+            return XCTFail("Expected add destination after scanner dismissal")
+        }
+        XCTAssertTrue(prefill.isWishlist)
+        XCTAssertEqual(prefill.scan, .init(code: "012345678905", isQR: false))
+    }
+
+    func testDismissWithoutPendingScannerRouteDoesNotPresentAnything() {
+        var state = CollectionPresentationState()
+        state.presentScanner()
+        state.modal = nil
+
+        XCTAssertNil(state.didDismissModal())
+        XCTAssertNil(state.modal)
+    }
+
     /// Mirrors CollectionView's @Query(sort: \.createdAt, order: .reverse):
     /// newest items come first.
     func testItemsFetchNewestFirst() throws {

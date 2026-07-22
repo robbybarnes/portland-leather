@@ -28,6 +28,22 @@ final class AppRouterTests: XCTestCase {
         XCTAssertEqual(router.path.count, 1)
     }
 
+    func testHandleUsesQRServiceCaseInsensitiveSchemeAndHostContract() throws {
+        let router = AppRouter()
+        let id = UUID()
+        let url = try XCTUnwrap(URL(string: "LEATHERFOLIO://ITEM/\(id.uuidString)"))
+        router.handle(url: url)
+        XCTAssertEqual(router.path.count, 1)
+    }
+
+    func testHandleRejectsExtraPathComponents() throws {
+        let router = AppRouter()
+        let id = UUID()
+        let url = try XCTUnwrap(URL(string: "leatherfolio://item/archive/\(id.uuidString)"))
+        router.handle(url: url)
+        XCTAssertEqual(router.path.count, 0)
+    }
+
     func testHandleRejectsWrongScheme() throws {
         let router = AppRouter()
         let url = try XCTUnwrap(URL(string: "https://item/\(UUID().uuidString)"))

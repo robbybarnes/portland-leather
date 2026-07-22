@@ -3,9 +3,10 @@ import VisionKit
 
 /// SwiftUI wrapper around VisionKit DataScannerViewController.
 /// Calls onScan exactly once per recognized code, then stops scanning.
-/// Present via ScannerSheet, which guards ScannerSupport.isReady first.
+/// Present via ScannerSheet, which guards ScannerSupport.currentAvailability.
 struct ScannerView: UIViewControllerRepresentable {
     let onScan: (_ payload: String, _ isQR: Bool) -> Void
+    let onFailure: (_ message: String) -> Void
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
         let scanner = DataScannerViewController(
@@ -14,33 +15,70 @@ struct ScannerView: UIViewControllerRepresentable {
             recognizesMultipleItems: false,
             isHighlightingEnabled: true)
         scanner.delegate = context.coordinator
-        try? scanner.startScanning()             // throws only when unavailable; sheet guard prevents that
+        do {
+            try scanner.startScanning()
+        } catch {
+            context.coordinator.fail(error, scanner: scanner)
+        }
         return scanner
     }
 
     func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {}
 
-    func makeCoordinator() -> Coordinator { Coordinator(onScan: onScan) }
+    static func dismantleUIViewController(
+        _ uiViewController: DataScannerViewController,
+        coordinator: Coordinator
+    ) {
+        uiViewController.stopScanning()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onScan: onScan, onFailure: onFailure)
+    }
 
     @MainActor
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
-        private let onScan: (String, Bool) -> Void
-        private var hasFired = false
+        private let resultGate: ScannerResultGate
 
-        init(onScan: @escaping (String, Bool) -> Void) {
-            self.onScan = onScan
+        init(
+            onScan: @escaping (String, Bool) -> Void,
+            onFailure: @escaping (String) -> Void
+        ) {
+            resultGate = ScannerResultGate { result in
+                switch result {
+                case .scan(let payload, let isQR):
+                    onScan(payload, isQR)
+                case .failure(let message):
+                    onFailure(message)
+                }
+            }
         }
 
         func dataScanner(_ dataScanner: DataScannerViewController,
                          didAdd addedItems: [RecognizedItem],
                          allItems: [RecognizedItem]) {
-            guard !hasFired else { return }
             for case let .barcode(barcode) in addedItems {
                 guard let payload = barcode.payloadStringValue, !payload.isEmpty else { continue }
-                hasFired = true
-                dataScanner.stopScanning()
-                onScan(payload, ScannerSupport.isQR(barcode.observation.symbology))
+                resultGate.deliver(
+                    .scan(
+                        payload: payload,
+                        isQR: ScannerSupport.isQR(barcode.observation.symbology))) {
+                            dataScanner.stopScanning()
+                        }
                 return
+            }
+        }
+
+        func dataScanner(
+            _ dataScanner: DataScannerViewController,
+            becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
+        ) {
+            fail(error, scanner: dataScanner)
+        }
+
+        func fail(_ error: Error, scanner: DataScannerViewController) {
+            resultGate.deliver(.failure(message: error.localizedDescription)) {
+                scanner.stopScanning()
             }
         }
     }

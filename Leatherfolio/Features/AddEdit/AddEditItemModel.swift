@@ -204,8 +204,11 @@ final class AddEditItemModel {
     var lookup: any ProductLookupService = NoOpProductLookup()
 
     func lookupUPCIfNeeded() async {
-        guard !upc.isEmpty else { return }
-        guard let info = await lookup.lookup(upc: upc) else { return }
+        let requestedUPC = upc
+        guard !requestedUPC.isEmpty else { return }
+        guard let info = await lookup.lookup(upc: requestedUPC),
+              !Task.isCancelled,
+              upc == requestedUPC else { return }
         if let lookedUpName = info.name, name.isEmpty { name = lookedUpName }
         if let lookedUpDescription = info.description, notes.isEmpty { notes = lookedUpDescription }
     }

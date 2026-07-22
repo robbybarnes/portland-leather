@@ -6,23 +6,85 @@ enum CollectionLayout: String, CaseIterable {
     case grid, list
 }
 
+struct CollectionScanPrefill: Equatable {
+    let code: String
+    let isQR: Bool
+}
+
+struct AddItemPrefill: Identifiable, Equatable {
+    let id = UUID()
+    let isWishlist: Bool
+    let scan: CollectionScanPrefill?
+
+    init(isWishlist: Bool, scan: CollectionScanPrefill? = nil) {
+        self.isWishlist = isWishlist
+        self.scan = scan
+    }
+}
+
+enum CollectionModalDestination: Identifiable, Equatable {
+    case add(AddItemPrefill)
+    case scanner
+    case filter
+    case stats
+
+    var id: String {
+        switch self {
+        case .add(let prefill): "add-\(prefill.id)"
+        case .scanner: "scanner"
+        case .filter: "filter"
+        case .stats: "stats"
+        }
+    }
+}
+
+/// Pure presentation state keeps scanner handoffs behind sheet dismissal so
+/// navigation and the next modal never compete with the scanner presentation.
+struct CollectionPresentationState: Equatable {
+    var modal: CollectionModalDestination?
+    private var pendingScanRoute: ScanRoute?
+    private var pendingScope: CollectionScope?
+
+    mutating func presentAdd(in scope: CollectionScope) {
+        modal = .add(AddItemPrefill(isWishlist: scope == .wishlist))
+    }
+
+    mutating func presentScanner() {
+        modal = .scanner
+    }
+
+    mutating func receiveScan(_ route: ScanRoute, in scope: CollectionScope) {
+        pendingScanRoute = route
+        pendingScope = scope
+        modal = nil
+    }
+
+    /// Returns the item to navigate to, or installs the next modal after the
+    /// scanner has fully dismissed.
+    mutating func didDismissModal() -> UUID? {
+        guard let route = pendingScanRoute else { return nil }
+        let scope = pendingScope ?? .owned
+        pendingScanRoute = nil
+        pendingScope = nil
+        switch route {
+        case .existingItem(let id):
+            return id
+        case .newItem(let code, let isQR):
+            modal = .add(AddItemPrefill(
+                isWishlist: scope == .wishlist,
+                scan: CollectionScanPrefill(code: code, isQR: isQR)))
+            return nil
+        }
+    }
+}
+
 struct CollectionView: View {
     @Query(sort: \Item.createdAt, order: .reverse) private var allItems: [Item]
     @Environment(AppRouter.self) private var router
     @State private var filter = ItemFilter()
-    @State private var showingFilterSheet = false
-    @State private var showingStats = false
-    @State private var showingAdd = false
-    @State private var showingScanner = false
-    @State private var scanPrefill: ScanPrefill?
+    @State private var presentation = CollectionPresentationState()
     @AppStorage("collectionLayout") private var layoutRaw = CollectionLayout.grid.rawValue
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    struct ScanPrefill: Identifiable {
-        let id = UUID()
-        let code: String
-        let isQR: Bool
-    }
 
     private var layout: CollectionLayout { CollectionLayout(rawValue: layoutRaw) ?? .grid }
     private var items: [Item] { filter.apply(to: allItems) }
@@ -50,7 +112,7 @@ struct CollectionView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    showingScanner = true
+                    presentation.presentScanner()
                 } label: {
                     Label("Scan", systemImage: "qrcode.viewfinder")
                 }
@@ -58,57 +120,50 @@ struct CollectionView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showingAdd = true
+                    presentation.presentAdd(in: filter.scope)
                 } label: {
                     Label("Add Item", systemImage: "plus")
                 }
             }
             organizeToolbar
         }
-        .sheet(isPresented: $showingAdd) {
-            AddEditItemView(item: nil)
-        }
-        .sheet(isPresented: $showingScanner) {
-            ScannerSheet(onScan: handleScan)
-        }
-        .sheet(item: $scanPrefill) { prefill in
-            AddEditItemView(model: {
-                let model = AddEditItemModel(item: nil)
-                model.applyScanPrefill(code: prefill.code, isQR: prefill.isQR)
-                return model
-            }())
-        }
-        .sheet(isPresented: $showingFilterSheet) {
-            FilterSheetView(filter: $filter,
-                            options: FilterOptions.make(items: allItems))
-        }
-        .sheet(isPresented: $showingStats) {
-            NavigationStack {
-                StatsView(stats: CollectionStats(
-                    items: allItems.filter { !$0.isWishlist },
-                    catalog: .shared
-                ))
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { showingStats = false }
-                    }
-                }
+        .sheet(item: $presentation.modal, onDismiss: completeModalTransition) { destination in
+            switch destination {
+            case .add(let prefill):
+                AddEditItemView(model: makeAddModel(prefill: prefill))
+            case .scanner:
+                ScannerSheet(onScan: handleScan)
+            case .filter:
+                FilterSheetView(
+                    filter: $filter,
+                    options: FilterOptions.make(items: allItems))
+            case .stats:
+                StatsSheet(items: allItems)
             }
         }
     }
 
     private func handleScan(payload: String, isQR: Bool) {
-        showingScanner = false
         let route = ScanRouter.route(
             payload: payload,
             isQR: isQR,
             existingItemIDs: Set(allItems.map(\.id)))
-        switch route {
-        case .existingItem(let id):
-            router.open(itemID: id)
-        case .newItem(let code, let isQR):
-            scanPrefill = ScanPrefill(code: code, isQR: isQR)
+        presentation.receiveScan(route, in: filter.scope)
+    }
+
+    private func completeModalTransition() {
+        if let itemID = presentation.didDismissModal() {
+            router.open(itemID: itemID)
         }
+    }
+
+    private func makeAddModel(prefill: AddItemPrefill) -> AddEditItemModel {
+        let model = AddEditItemModel(item: nil)
+        model.isWishlist = prefill.isWishlist
+        if let scan = prefill.scan {
+            model.applyScanPrefill(code: scan.code, isQR: scan.isQR)
+        }
+        return model
     }
 
     // MARK: - Content
@@ -158,7 +213,7 @@ struct CollectionView: View {
     @ToolbarContentBuilder private var organizeToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
-                showingStats = true
+                presentation.modal = .stats
             } label: {
                 Label("Stats", systemImage: "chart.bar")
             }
@@ -186,12 +241,31 @@ struct CollectionView: View {
             }
 
             Button {
-                showingFilterSheet = true
+                presentation.modal = .filter
             } label: {
                 Label("Filters",
                       systemImage: filter.activeFilterCount > 0
                       ? "line.3.horizontal.decrease.circle.fill"
                       : "line.3.horizontal.decrease.circle")
+            }
+        }
+    }
+}
+
+private struct StatsSheet: View {
+    let items: [Item]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            StatsView(stats: CollectionStats(
+                items: items.filter { !$0.isWishlist },
+                catalog: .shared
+            ))
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
             }
         }
     }

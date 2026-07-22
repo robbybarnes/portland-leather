@@ -32,7 +32,7 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        NSCameraUsageDescription: "Leatherfolio uses the camera to photograph your items and, later, to scan QR and barcode labels."
+        NSCameraUsageDescription: "Leatherfolio uses the camera to photograph your items and scan QR and barcode labels."
         NSPhotoLibraryUsageDescription: "Leatherfolio lets you pick photos of your items from your photo library."
         CFBundleURLTypes:
           - CFBundleURLName: com.robbybarnes.leatherfolio

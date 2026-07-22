@@ -5,12 +5,20 @@ import SwiftUI
 struct ScannerSheet: View {
     let onScan: (_ payload: String, _ isQR: Bool) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var runtimeError: String?
+
+    private var availability: ScannerAvailability {
+        runtimeError.map(ScannerAvailability.runtimeError)
+            ?? ScannerSupport.currentAvailability
+    }
 
     var body: some View {
         NavigationStack {
             Group {
-                if ScannerSupport.isReady {
-                    ScannerView(onScan: onScan)
+                if availability == .ready {
+                    ScannerView(
+                        onScan: onScan,
+                        onFailure: { runtimeError = $0 })
                         .ignoresSafeArea()
                 } else {
                     unavailableView
@@ -27,12 +35,17 @@ struct ScannerSheet: View {
     }
 
     private var unavailableView: some View {
-        ContentUnavailableView {
-            Label("Camera Unavailable", systemImage: "camera.fill")
+        let fallback = availability.fallback ?? ScannerFallback(
+            title: "Camera Unavailable",
+            message: "Scanning is unavailable.",
+            showsSettings: false)
+        return ContentUnavailableView {
+            Label(fallback.title, systemImage: "camera.fill")
         } description: {
-            Text("Scanning needs a device with a camera and permission to use it. Check camera access for Leatherfolio in Settings.")
+            Text(fallback.message)
         } actions: {
-            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+            if fallback.showsSettings,
+               let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                 Link("Open Settings", destination: settingsURL)
             }
         }
