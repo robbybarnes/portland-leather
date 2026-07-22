@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftData
 
@@ -5,16 +6,19 @@ import SwiftData
 /// transition. URLs route immediately into the retained AppRouter; retry only
 /// reopens the same persistent-store factory.
 @MainActor
-final class AppRootCoordinator {
-    let launchModel: AppLaunchModel
+final class AppRootCoordinator: ObservableObject {
     let router = AppRouter()
+    @Published private(set) var container: ModelContainer?
+    private let launchModel: AppLaunchModel
 
-    var container: ModelContainer? {
-        launchModel.container
-    }
+    var unavailableTitle: String { launchModel.unavailableTitle }
+    var unavailableMessage: String { launchModel.unavailableMessage }
+    var retryButtonTitle: String { launchModel.retryButtonTitle }
 
     init(containerFactory: @escaping AppLaunchModel.ContainerFactory) {
-        launchModel = AppLaunchModel(containerFactory: containerFactory)
+        let launchModel = AppLaunchModel(containerFactory: containerFactory)
+        self.launchModel = launchModel
+        container = launchModel.container
     }
 
     func handle(url: URL) {
@@ -23,5 +27,6 @@ final class AppRootCoordinator {
 
     func retry() {
         launchModel.retry()
+        container = launchModel.container
     }
 }

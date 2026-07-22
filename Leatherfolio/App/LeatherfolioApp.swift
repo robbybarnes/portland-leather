@@ -11,7 +11,7 @@ struct LeatherfolioApp: App {
 }
 
 struct AppRootView: View {
-    @State private var coordinator: AppRootCoordinator
+    @StateObject private var coordinator: AppRootCoordinator
 
     @MainActor
     init(
@@ -19,8 +19,8 @@ struct AppRootView: View {
             try AppModelContainer.make(inMemory: false)
         }
     ) {
-        _coordinator = State(
-            initialValue: AppRootCoordinator(containerFactory: containerFactory))
+        _coordinator = StateObject(
+            wrappedValue: AppRootCoordinator(containerFactory: containerFactory))
     }
 
     var body: some View {
@@ -32,12 +32,12 @@ struct AppRootView: View {
             } else {
                 ContentUnavailableView {
                     Label(
-                        coordinator.launchModel.unavailableTitle,
+                        coordinator.unavailableTitle,
                         systemImage: "externaldrive.badge.exclamationmark")
                 } description: {
-                    Text(coordinator.launchModel.unavailableMessage)
+                    Text(coordinator.unavailableMessage)
                 } actions: {
-                    Button(coordinator.launchModel.retryButtonTitle) {
+                    Button(coordinator.retryButtonTitle) {
                         coordinator.retry()
                     }
                     .buttonStyle(.borderedProminent)
