@@ -11,6 +11,7 @@ struct CollectionView: View {
     @Environment(AppRouter.self) private var router
     @State private var filter = ItemFilter()
     @State private var showingFilterSheet = false
+    @State private var showingStats = false
     @State private var showingAdd = false
     @State private var showingScanner = false
     @State private var scanPrefill: ScanPrefill?
@@ -79,6 +80,19 @@ struct CollectionView: View {
             FilterSheetView(filter: $filter,
                             options: FilterOptions.make(items: allItems))
         }
+        .sheet(isPresented: $showingStats) {
+            NavigationStack {
+                StatsView(stats: CollectionStats(
+                    items: allItems.filter { !$0.isWishlist },
+                    catalog: .shared
+                ))
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showingStats = false }
+                    }
+                }
+            }
+        }
     }
 
     private func handleScan(payload: String, isQR: Bool) {
@@ -137,6 +151,12 @@ struct CollectionView: View {
 
     @ToolbarContentBuilder private var organizeToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
+            Button {
+                showingStats = true
+            } label: {
+                Label("Stats", systemImage: "chart.bar")
+            }
+
             Menu {
                 Picker("Sort by", selection: $filter.sortKey) {
                     ForEach(SortKey.allCases) { key in
