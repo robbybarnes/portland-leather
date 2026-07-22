@@ -54,6 +54,9 @@ struct AddEditItemView: View {
             .onChange(of: selectedPickerItems) {
                 Task { await loadPickedPhotos() }
             }
+            .task {
+                await model.lookupUPCIfNeeded()
+            }
         }
     }
 

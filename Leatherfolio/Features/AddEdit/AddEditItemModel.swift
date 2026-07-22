@@ -54,6 +54,21 @@ final class AddEditItemModel {
         }
     }
 
+    // MARK: - UPC lookup seam (v2; NoOp in v1)
+
+    /// Injection seam: tests assign a stub; v2 assigns a real lookup backend.
+    var lookup: any ProductLookupService = NoOpProductLookup()
+
+    /// If a UPC was captured, ask the lookup service and prefill name/notes —
+    /// only fields the user hasn't filled, and only non-nil results. With
+    /// NoOpProductLookup this is a no-op, so v1 behavior is unchanged.
+    func lookupUPCIfNeeded() async {
+        guard !upc.isEmpty else { return }
+        guard let info = await lookup.lookup(upc: upc) else { return }
+        if let lookedUpName = info.name, name.isEmpty { name = lookedUpName }
+        if let lookedUpDescription = info.description, notes.isEmpty { notes = lookedUpDescription }
+    }
+
     // MARK: - Catalog-driven picker options (Phase 2)
 
     /// Injection seam: tests assign a CatalogSeed(data:) fixture.
