@@ -26,9 +26,7 @@ struct CollectionView: View {
             }
         }
         .sheet(isPresented: $showingAdd) {
-            // Task 5 replaces this stub with AddEditItemView(item: nil).
-            Text("Add flow arrives in the next task.")
-                .padding()
+            AddEditItemView(item: nil)
         }
     }
 
