@@ -11,7 +11,7 @@ final class AppLaunchModel {
 
     let unavailableTitle = "Collection Unavailable"
     let unavailableMessage =
-        "Leatherfolio couldn't open your collection. Your data was not changed. Try again to reopen the same collection."
+        "My PLG Collection couldn't open your collection. Your data was not changed. Try again to reopen the same collection."
     let retryButtonTitle = "Try Again"
 
     private let containerFactory: ContainerFactory

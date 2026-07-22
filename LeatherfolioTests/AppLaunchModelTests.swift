@@ -17,7 +17,7 @@ final class AppLaunchModelTests: XCTestCase {
         XCTAssertEqual(model.unavailableTitle, "Collection Unavailable")
         XCTAssertEqual(
             model.unavailableMessage,
-            "Leatherfolio couldn't open your collection. Your data was not changed. Try again to reopen the same collection."
+            "My PLG Collection couldn't open your collection. Your data was not changed. Try again to reopen the same collection."
         )
         XCTAssertEqual(model.retryButtonTitle, "Try Again")
     }

@@ -11,8 +11,7 @@ struct LeatherfolioApp: App {
 }
 
 struct AppRootView: View {
-    @State private var launchModel: AppLaunchModel
-    @State private var router = AppRouter()
+    @State private var coordinator: AppRootCoordinator
 
     @MainActor
     init(
@@ -20,35 +19,35 @@ struct AppRootView: View {
             try AppModelContainer.make(inMemory: false)
         }
     ) {
-        _launchModel = State(
-            initialValue: AppLaunchModel(containerFactory: containerFactory))
+        _coordinator = State(
+            initialValue: AppRootCoordinator(containerFactory: containerFactory))
     }
 
     var body: some View {
         Group {
-            if let container = launchModel.container {
+            if let container = coordinator.container {
                 ContentView()
                     .modelContainer(container)
-                    .environment(router)
-                    .onOpenURL { url in
-                        router.handle(url: url)
-                    }
+                    .environment(coordinator.router)
             } else {
                 ContentUnavailableView {
                     Label(
-                        launchModel.unavailableTitle,
+                        coordinator.launchModel.unavailableTitle,
                         systemImage: "externaldrive.badge.exclamationmark")
                 } description: {
-                    Text(launchModel.unavailableMessage)
+                    Text(coordinator.launchModel.unavailableMessage)
                 } actions: {
-                    Button(launchModel.retryButtonTitle) {
-                        launchModel.retry()
+                    Button(coordinator.launchModel.retryButtonTitle) {
+                        coordinator.retry()
                     }
                     .buttonStyle(.borderedProminent)
                 }
                 .padding()
                 .background(Theme.background)
             }
+        }
+        .onOpenURL { url in
+            coordinator.handle(url: url)
         }
         .tint(Theme.accent)
         .foregroundStyle(Theme.textPrimary)
