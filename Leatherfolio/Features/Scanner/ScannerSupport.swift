@@ -67,6 +67,21 @@ final class ScannerResultGate {
     }
 }
 
+/// Defers a startup error beyond representable construction so its callback
+/// can safely update SwiftUI state on a later MainActor turn.
+@MainActor
+enum ScannerStartupFailureDelivery {
+    @discardableResult
+    static func schedule(
+        _ delivery: @escaping @MainActor () -> Void
+    ) -> Task<Void, Never> {
+        Task { @MainActor in
+            await Task.yield()
+            delivery()
+        }
+    }
+}
+
 /// Pure, unit-testable helpers around VisionKit scanning.
 enum ScannerSupport {
     @MainActor static var currentAvailability: ScannerAvailability {

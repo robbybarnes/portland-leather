@@ -18,7 +18,10 @@ struct ScannerView: UIViewControllerRepresentable {
         do {
             try scanner.startScanning()
         } catch {
-            context.coordinator.fail(error, scanner: scanner)
+            let coordinator = context.coordinator
+            ScannerStartupFailureDelivery.schedule {
+                coordinator.fail(error, scanner: scanner)
+            }
         }
         return scanner
     }

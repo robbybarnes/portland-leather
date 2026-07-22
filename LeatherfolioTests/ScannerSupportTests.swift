@@ -101,6 +101,34 @@ final class ScannerSupportTests: XCTestCase {
         XCTAssertEqual(stopCount, 1)
     }
 
+    func testStartupFailureDeliveryDefersAndKeepsResultGateTerminal() async {
+        var events = ["scheduled"]
+        var results: [ScannerResult] = []
+        var stopCount = 0
+        let gate = ScannerResultGate { results.append($0) }
+
+        let delivery = ScannerStartupFailureDelivery.schedule {
+            events.append("delivered")
+            gate.deliver(.failure(message: "Start failed")) { stopCount += 1 }
+        }
+
+        events.append("returned")
+        XCTAssertEqual(events, ["scheduled", "returned"])
+        XCTAssertTrue(results.isEmpty)
+        XCTAssertEqual(stopCount, 0)
+
+        await delivery.value
+
+        XCTAssertEqual(events, ["scheduled", "returned", "delivered"])
+        XCTAssertEqual(results, [.failure(message: "Start failed")])
+        XCTAssertEqual(stopCount, 1)
+
+        gate.deliver(.failure(message: "Later failure")) { stopCount += 1 }
+        gate.deliver(.scan(payload: "late", isQR: true)) { stopCount += 1 }
+        XCTAssertEqual(results, [.failure(message: "Start failed")])
+        XCTAssertEqual(stopCount, 1)
+    }
+
     func testCoordinatorPropagatesConcreteUnavailableDelegateCallback() {
         var failureMessages: [String] = []
         let coordinator = ScannerView.Coordinator(
