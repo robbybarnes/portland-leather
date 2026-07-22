@@ -1,6 +1,7 @@
 import Vision
 import VisionKit
 import AVFoundation
+import Observation
 
 struct ScannerFallback: Equatable {
     let title: String
@@ -40,6 +41,20 @@ enum ScannerAvailability: Equatable {
                 message: "Scanning stopped because of a camera error: \(detail)",
                 showsSettings: false)
         }
+    }
+}
+
+@MainActor
+@Observable
+final class ScannerSheetState {
+    private(set) var runtimeError: String?
+
+    func availability(base: ScannerAvailability) -> ScannerAvailability {
+        runtimeError.map(ScannerAvailability.runtimeError) ?? base
+    }
+
+    func receiveFailure(_ message: String) {
+        runtimeError = message
     }
 }
 

@@ -267,10 +267,34 @@ struct ItemDetailView: View {
     }
 }
 
+struct DetailPhotoLoadRequest: Equatable {
+    let photoID: UUID
+    let generation: UInt
+}
+
+/// A lightweight request token prevents an older decode from replacing a
+/// newer image without touching SwiftData or comparing external blob bytes.
+struct DetailPhotoLoadState {
+    private var generation: UInt = 0
+    private var activeRequest: DetailPhotoLoadRequest?
+
+    mutating func begin(photoID: UUID) -> DetailPhotoLoadRequest {
+        generation &+= 1
+        let request = DetailPhotoLoadRequest(photoID: photoID, generation: generation)
+        activeRequest = request
+        return request
+    }
+
+    func shouldApply(_ request: DetailPhotoLoadRequest) -> Bool {
+        activeRequest == request
+    }
+}
+
 private struct DetailPhotoView: View {
     let photo: Photo
     let accessibilityLabel: String
     @State private var image: UIImage?
+    @State private var loadState = DetailPhotoLoadState()
 
     var body: some View {
         Group {
@@ -287,17 +311,16 @@ private struct DetailPhotoView: View {
         .accessibilityAddTraits(.isImage)
         .task(id: photo.id) {
             let requestedPhotoID = photo.id
-            guard let sourceData = photo.imageData else {
-                guard !Task.isCancelled,
-                      photo.id == requestedPhotoID,
-                      photo.imageData == nil else { return }
-                image = nil
-                return
+            let request = loadState.begin(photoID: requestedPhotoID)
+            let sourceData = photo.imageData
+            let loadedImage: UIImage?
+            if let sourceData {
+                loadedImage = await ImageStore.shared.displayImage(from: sourceData)
+            } else {
+                loadedImage = nil
             }
-            let loadedImage = await ImageStore.shared.displayImage(from: sourceData)
             guard !Task.isCancelled,
-                  photo.id == requestedPhotoID,
-                  photo.imageData == sourceData else { return }
+                  loadState.shouldApply(request) else { return }
             image = loadedImage
         }
     }

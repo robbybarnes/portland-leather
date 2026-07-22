@@ -1,12 +1,25 @@
 import SwiftUI
 import VisionKit
 
+typealias ScannerStartAction = @MainActor (DataScannerViewController) throws -> Void
+
 /// SwiftUI wrapper around VisionKit DataScannerViewController.
 /// Calls onScan exactly once per recognized code, then stops scanning.
 /// Present via ScannerSheet, which guards ScannerSupport.currentAvailability.
 struct ScannerView: UIViewControllerRepresentable {
     let onScan: (_ payload: String, _ isQR: Bool) -> Void
     let onFailure: (_ message: String) -> Void
+    let startAction: ScannerStartAction
+
+    init(
+        onScan: @escaping (_ payload: String, _ isQR: Bool) -> Void,
+        onFailure: @escaping (_ message: String) -> Void,
+        startAction: @escaping ScannerStartAction = { try $0.startScanning() }
+    ) {
+        self.onScan = onScan
+        self.onFailure = onFailure
+        self.startAction = startAction
+    }
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
         let scanner = DataScannerViewController(
@@ -15,15 +28,26 @@ struct ScannerView: UIViewControllerRepresentable {
             recognizesMultipleItems: false,
             isHighlightingEnabled: true)
         scanner.delegate = context.coordinator
+        _ = start(scanner, coordinator: context.coordinator)
+        return scanner
+    }
+
+    /// Returns a task only on failure, allowing tests to await the deferred
+    /// callback while production keeps VisionKit's concrete start operation.
+    @MainActor
+    @discardableResult
+    func start(
+        _ scanner: DataScannerViewController,
+        coordinator: Coordinator
+    ) -> Task<Void, Never>? {
         do {
-            try scanner.startScanning()
+            try startAction(scanner)
+            return nil
         } catch {
-            let coordinator = context.coordinator
-            ScannerStartupFailureDelivery.schedule {
+            return ScannerStartupFailureDelivery.schedule {
                 coordinator.fail(error, scanner: scanner)
             }
         }
-        return scanner
     }
 
     func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {}

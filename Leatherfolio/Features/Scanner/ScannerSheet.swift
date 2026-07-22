@@ -5,11 +5,10 @@ import SwiftUI
 struct ScannerSheet: View {
     let onScan: (_ payload: String, _ isQR: Bool) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var runtimeError: String?
+    @State private var state = ScannerSheetState()
 
     private var availability: ScannerAvailability {
-        runtimeError.map(ScannerAvailability.runtimeError)
-            ?? ScannerSupport.currentAvailability
+        state.availability(base: ScannerSupport.currentAvailability)
     }
 
     var body: some View {
@@ -18,7 +17,7 @@ struct ScannerSheet: View {
                 if availability == .ready {
                     ScannerView(
                         onScan: onScan,
-                        onFailure: { runtimeError = $0 })
+                        onFailure: state.receiveFailure)
                         .ignoresSafeArea()
                 } else {
                     unavailableView

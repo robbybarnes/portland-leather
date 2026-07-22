@@ -83,4 +83,28 @@ final class AccessibilityTextTests: XCTestCase {
             "QR label for Untitled item"
         )
     }
+
+    func testPhotoEditorPrimaryActionDistinguishesCurrentAndMakePrimary() {
+        let current = AccessibilityText.photoPrimaryAction(isPrimary: true)
+        XCTAssertEqual(current.label, "Primary photo")
+        XCTAssertEqual(current.value, "Current primary")
+        XCTAssertEqual(current.hint, "This photo appears first.")
+
+        let available = AccessibilityText.photoPrimaryAction(isPrimary: false)
+        XCTAssertEqual(available.label, "Make photo primary")
+        XCTAssertEqual(available.value, "Not primary")
+        XCTAssertEqual(available.hint, "Makes this photo appear first.")
+    }
+
+    func testPhotoEditorRemovalActionDistinguishesSavedAndNewPhotos() {
+        let saved = AccessibilityText.photoRemovalAction(isStored: true)
+        XCTAssertEqual(saved.label, "Remove saved photo")
+        XCTAssertEqual(saved.value, "Saved photo")
+        XCTAssertEqual(saved.hint, "Removes this photo when you save the item.")
+
+        let newlyAdded = AccessibilityText.photoRemovalAction(isStored: false)
+        XCTAssertEqual(newlyAdded.label, "Remove new photo")
+        XCTAssertEqual(newlyAdded.value, "New photo")
+        XCTAssertEqual(newlyAdded.hint, "Removes this photo before it is saved.")
+    }
 }

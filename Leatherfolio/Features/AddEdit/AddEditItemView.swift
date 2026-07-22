@@ -48,7 +48,7 @@ struct AddEditItemView: View {
                 CameraPicker { result in
                     switch result {
                     case .success(let data):
-                        model.queueCameraPhoto(data)
+                        startImport(using: [{ data }])
                     case .failure:
                         model.photoImportErrorMessage =
                             "The camera photo couldn't be imported. Your item details and other photos are unchanged."
@@ -105,7 +105,7 @@ struct AddEditItemView: View {
                 }
             }
             PhotosPicker(selection: $selectedPickerItems,
-                         maxSelectionCount: 5,
+                         maxSelectionCount: max(1, model.remainingPhotoCapacity),
                          matching: .images) {
                 Label("Choose from Library", systemImage: "photo.on.rectangle")
             }
@@ -307,8 +307,11 @@ private struct ExistingPhotoEditorCard: View {
         isPrimary: Bool,
         remove: @escaping () -> Void
     ) -> some View {
-        VStack(spacing: 6) {
+        let primaryAction = AccessibilityText.photoPrimaryAction(isPrimary: isPrimary)
+        let removalAction = AccessibilityText.photoRemovalAction(isStored: true)
+        return VStack(spacing: 6) {
             editorImage(image)
+                .accessibilityHidden(true)
             TextField("Caption", text: caption)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 124)
@@ -319,10 +322,16 @@ private struct ExistingPhotoEditorCard: View {
                     Image(systemName: isPrimary ? "star.fill" : "star")
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel(primaryAction.label)
+                .accessibilityValue(primaryAction.value)
+                .accessibilityHint(primaryAction.hint)
                 Button(role: .destructive, action: remove) {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel(removalAction.label)
+                .accessibilityValue(removalAction.value)
+                .accessibilityHint(removalAction.hint)
             }
         }
     }
@@ -334,8 +343,12 @@ private struct QueuedPhotoEditorCard: View {
     @State private var image: UIImage?
 
     var body: some View {
+        let isPrimary = model.primaryPhotoID == draft.id
+        let primaryAction = AccessibilityText.photoPrimaryAction(isPrimary: isPrimary)
+        let removalAction = AccessibilityText.photoRemovalAction(isStored: false)
         VStack(spacing: 6) {
             editorImage(image)
+                .accessibilityHidden(true)
             TextField("Caption", text: Binding(
                 get: { model.caption(for: draft.id) },
                 set: { model.updateCaption($0, for: draft.id) }))
@@ -345,15 +358,21 @@ private struct QueuedPhotoEditorCard: View {
                 Button {
                     model.choosePrimary(photoID: draft.id)
                 } label: {
-                    Image(systemName: model.primaryPhotoID == draft.id ? "star.fill" : "star")
+                    Image(systemName: isPrimary ? "star.fill" : "star")
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel(primaryAction.label)
+                .accessibilityValue(primaryAction.value)
+                .accessibilityHint(primaryAction.hint)
                 Button(role: .destructive) {
                     model.removeQueuedPhoto(id: draft.id)
                 } label: {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel(removalAction.label)
+                .accessibilityValue(removalAction.value)
+                .accessibilityHint(removalAction.hint)
             }
         }
         .task(id: draft.id) {

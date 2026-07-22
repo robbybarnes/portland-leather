@@ -6,6 +6,9 @@ import AVFoundation
 
 @MainActor
 final class ScannerSupportTests: XCTestCase {
+    private struct StartupError: LocalizedError {
+        var errorDescription: String? { "Injected startup failure" }
+    }
 
     func testQRSymbologiesMapToIsQRTrue() {
         XCTAssertTrue(ScannerSupport.isQR(.qr))
@@ -140,5 +143,30 @@ final class ScannerSupportTests: XCTestCase {
         delegate.dataScanner(scanner, becameUnavailableWithError: .cameraRestricted)
 
         XCTAssertEqual(failureMessages.count, 1)
+    }
+
+    func testInjectedStartupFailureDefersIntoScannerSheetFailurePath() async throws {
+        let sheetState = ScannerSheetState()
+        let scanner = DataScannerViewController(recognizedDataTypes: [.barcode()])
+        let view = ScannerView(
+            onScan: { _, _ in XCTFail("Startup failure must not scan") },
+            onFailure: { sheetState.receiveFailure($0) },
+            startAction: { _ in throw StartupError() })
+        let coordinator = view.makeCoordinator()
+
+        let delivery = try XCTUnwrap(view.start(scanner, coordinator: coordinator))
+
+        XCTAssertNil(sheetState.runtimeError)
+        XCTAssertEqual(sheetState.availability(base: .ready), .ready)
+
+        await delivery.value
+
+        XCTAssertEqual(sheetState.runtimeError, "Injected startup failure")
+        let fallback = try XCTUnwrap(sheetState.availability(base: .ready).fallback)
+        XCTAssertEqual(fallback.title, "Scanning Stopped")
+        XCTAssertTrue(fallback.message.contains("Injected startup failure"))
+
+        coordinator.fail(StartupError(), scanner: scanner)
+        XCTAssertEqual(sheetState.runtimeError, "Injected startup failure")
     }
 }

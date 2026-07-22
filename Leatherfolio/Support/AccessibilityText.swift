@@ -1,5 +1,11 @@
 import Foundation
 
+struct AccessibilityActionText: Equatable {
+    let label: String
+    let value: String
+    let hint: String
+}
+
 /// Pure composition of VoiceOver strings, so label wording is unit-testable
 /// and identical wherever it's spoken.
 enum AccessibilityText {
@@ -35,5 +41,33 @@ enum AccessibilityText {
     static func qrLabel(itemName: String) -> String {
         let name = itemName.trimmingCharacters(in: .whitespacesAndNewlines)
         return "QR label for \(name.isEmpty ? "Untitled item" : name)"
+    }
+
+    static func photoPrimaryAction(isPrimary: Bool) -> AccessibilityActionText {
+        if isPrimary {
+            AccessibilityActionText(
+                label: "Primary photo",
+                value: "Current primary",
+                hint: "This photo appears first.")
+        } else {
+            AccessibilityActionText(
+                label: "Make photo primary",
+                value: "Not primary",
+                hint: "Makes this photo appear first.")
+        }
+    }
+
+    static func photoRemovalAction(isStored: Bool) -> AccessibilityActionText {
+        if isStored {
+            AccessibilityActionText(
+                label: "Remove saved photo",
+                value: "Saved photo",
+                hint: "Removes this photo when you save the item.")
+        } else {
+            AccessibilityActionText(
+                label: "Remove new photo",
+                value: "New photo",
+                hint: "Removes this photo before it is saved.")
+        }
     }
 }

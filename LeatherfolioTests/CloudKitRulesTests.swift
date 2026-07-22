@@ -77,6 +77,42 @@ final class CloudKitRulesTests: XCTestCase {
         }
     }
 
+    func testPreCatalogLineStoreMigratesWithoutLosingItemData() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "LeatherfolioLegacyTests-" + UUID().uuidString,
+                       directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appending(path: "pre-catalog-line.store")
+        let itemID = UUID()
+
+        do {
+            let legacyContainer = try LegacyPreCatalogSchema.make(storeURL: storeURL)
+            let legacyItem = LegacyPreCatalogSchema.Item()
+            legacyItem.id = itemID
+            legacyItem.name = "Legacy Custom Name"
+            legacyItem.categoryRaw = ItemCategory.tote.rawValue
+            legacyItem.color = "Honey"
+            legacyItem.notes = "Created before catalogLineName"
+            legacyContainer.mainContext.insert(legacyItem)
+            try legacyContainer.mainContext.save()
+        }
+
+        do {
+            let migratedContainer = try AppModelContainer.make(
+                inMemory: false,
+                storeURL: storeURL)
+            let migratedItem = try XCTUnwrap(
+                migratedContainer.mainContext.fetch(FetchDescriptor<Item>())
+                    .first { $0.id == itemID })
+            XCTAssertEqual(migratedItem.name, "Legacy Custom Name")
+            XCTAssertEqual(migratedItem.category, .tote)
+            XCTAssertEqual(migratedItem.color, "Honey")
+            XCTAssertEqual(migratedItem.notes, "Created before catalogLineName")
+            XCTAssertNil(migratedItem.catalogLineName)
+        }
+    }
+
     /// CloudKit rule: every property optional or defaulted. If a bare Item()
     /// inserts and saves with no arguments, the rule holds for the schema.
     func testItemWithOnlyDefaultsSaves() throws {
@@ -149,5 +185,71 @@ final class CloudKitRulesTests: XCTestCase {
         XCTAssertEqual(item.valueDelta, 45)
         item.myCost = nil
         XCTAssertNil(item.valueDelta)
+    }
+}
+
+/// A real on-disk schema matching the production Item/Photo/Tag shape before
+/// commit 1808c08 added Item.catalogLineName. The migration test writes this
+/// schema first and only then opens the store with the current app schema.
+private enum LegacyPreCatalogSchema {
+    @Model
+    final class Item {
+        var id: UUID = UUID()
+        var name: String = ""
+        var categoryRaw: String = ItemCategory.other.rawValue
+        var size: String?
+        var color: String?
+        var leatherTypeRaw: String?
+        var isUnicorn: Bool = false
+        var isWishlist: Bool = false
+        var favorite: Bool = false
+        var myCost: Decimal?
+        var retailCost: Decimal?
+        var estimatedValue: Decimal?
+        var rating: Int = 0
+        var upc: String?
+        var conditionRaw: String?
+        var dateAcquired: Date?
+        var notes: String?
+        var createdAt: Date = Date.now
+        var updatedAt: Date = Date.now
+        @Relationship(deleteRule: .cascade, inverse: \Photo.item)
+        var photos: [Photo]? = []
+        @Relationship(inverse: \Tag.items)
+        var tags: [Tag]? = []
+
+        init() {}
+    }
+
+    @Model
+    final class Photo {
+        var id: UUID = UUID()
+        @Attribute(.externalStorage) var imageData: Data?
+        var caption: String?
+        var isPrimary: Bool = false
+        var createdAt: Date = Date.now
+        var item: Item?
+
+        init() {}
+    }
+
+    @Model
+    final class Tag {
+        var name: String = ""
+        var items: [Item]? = []
+
+        init(name: String = "") {
+            self.name = name
+        }
+    }
+
+    @MainActor
+    static func make(storeURL: URL) throws -> ModelContainer {
+        let schema = Schema([Item.self, Photo.self, Tag.self])
+        let configuration = ModelConfiguration(
+            schema: schema,
+            url: storeURL,
+            cloudKitDatabase: .none)
+        return try ModelContainer(for: schema, configurations: [configuration])
     }
 }

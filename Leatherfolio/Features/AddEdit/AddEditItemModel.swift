@@ -40,6 +40,8 @@ struct ExistingPhotoDraft: Identifiable, Equatable {
 @MainActor
 @Observable
 final class AddEditItemModel {
+    static let maximumPhotoCount = 5
+
     private let locale: Locale
 
     // MARK: Form fields
@@ -87,7 +89,10 @@ final class AddEditItemModel {
         get { queuedPhotos.map(\.data) }
         set {
             guard !isBusy else { return }
-            queuedPhotos = newValue.map { QueuedPhoto(data: $0) }
+            let availableSlots = max(
+                0,
+                Self.maximumPhotoCount - visibleExistingPhotos.count)
+            queuedPhotos = newValue.prefix(availableSlots).map { QueuedPhoto(data: $0) }
             normalizePrimarySelection()
         }
     }
@@ -97,16 +102,24 @@ final class AddEditItemModel {
     }
 
     var isBusy: Bool { isImporting || isSaving }
+    var remainingPhotoCapacity: Int {
+        max(
+            0,
+            Self.maximumPhotoCount - visibleExistingPhotos.count - queuedPhotos.count)
+    }
 
     func queuePhoto(_ data: Data) {
-        guard !isBusy else { return }
+        guard !isBusy, remainingPhotoCapacity > 0 else { return }
         appendQueuedPhoto(data)
     }
 
-    /// Camera captures remain raw in the retry-safe queue until save owns
-    /// original preparation. Library imports use `importPhotos` instead.
-    func queueCameraPhoto(_ data: Data) {
-        queuePhoto(data)
+    /// Camera bytes use the same tracked preparation pipeline as library bytes,
+    /// so a failed capture is reported before it can become a queued draft.
+    func importCameraPhoto(
+        _ data: Data,
+        imageStore: ImageStore = .shared
+    ) async {
+        await importPhotos(using: [{ data }], imageStore: imageStore)
     }
 
     private func appendQueuedPhoto(_ data: Data, preparedData: Data? = nil) {
@@ -171,6 +184,7 @@ final class AddEditItemModel {
 
         var failureCount = 0
         for load in loaders {
+            guard remainingPhotoCapacity > 0 else { break }
             do {
                 let sourceData = try await load()
                 guard let prepared = await imageStore.prepareOriginal(from: sourceData) else {
@@ -372,8 +386,13 @@ final class AddEditItemModel {
         }
 
         existingItem = item
-        let committedQueuedIDs = Set(queuedSnapshot.map(\.id))
+        let committedQueuedIDs = Set(preparedQueued.map(\.draft.id))
         queuedPhotos.removeAll { committedQueuedIDs.contains($0.id) }
+        let failedPreparationCount = queuedSnapshot.count - preparedQueued.count
+        if failedPreparationCount > 0 {
+            let noun = failedPreparationCount == 1 ? "photo" : "photos"
+            photoImportErrorMessage = "\(failedPreparationCount) \(noun) couldn't be imported. Your other photos and item details are unchanged."
+        }
         removedExistingPhotoIDs.subtract(removedIDs)
         loadExistingPhotoDrafts(from: item)
         for photoID in removedIDs {
