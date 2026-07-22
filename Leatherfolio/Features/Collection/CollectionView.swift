@@ -1,12 +1,20 @@
 import SwiftUI
 import SwiftData
 
+/// Grid/list layout choice, persisted via @AppStorage.
+enum CollectionLayout: String, CaseIterable {
+    case grid, list
+}
+
 struct CollectionView: View {
-    @Query(sort: \Item.createdAt, order: .reverse) private var items: [Item]
+    @Query(sort: \Item.createdAt, order: .reverse) private var allItems: [Item]
     @Environment(AppRouter.self) private var router
+    @State private var filter = ItemFilter()
+    @State private var showingFilterSheet = false
     @State private var showingAdd = false
     @State private var showingScanner = false
     @State private var scanPrefill: ScanPrefill?
+    @AppStorage("collectionLayout") private var layoutRaw = CollectionLayout.grid.rawValue
 
     struct ScanPrefill: Identifiable {
         let id = UUID()
@@ -14,17 +22,28 @@ struct CollectionView: View {
         let isQR: Bool
     }
 
-    private let columns = [GridItem(.adaptive(minimum: 160), spacing: 12)]
+    private var layout: CollectionLayout { CollectionLayout(rawValue: layoutRaw) ?? .grid }
+    private var items: [Item] { filter.apply(to: allItems) }
 
     var body: some View {
-        Group {
-            if items.isEmpty {
-                emptyState
-            } else {
-                grid
+        VStack(spacing: 0) {
+            Picker("Scope", selection: $filter.scope) {
+                ForEach(CollectionScope.allCases) { scope in
+                    Text(scope.rawValue).tag(scope)
+                }
             }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.top, 8)
+
+            if !filter.activeChips.isEmpty {
+                FilterChipsRow(filter: $filter)
+            }
+
+            content
         }
-        .navigationTitle("Leatherfolio")
+        .navigationTitle("Collection")
+        .searchable(text: $filter.query, prompt: "Search name, notes, tags")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
@@ -41,6 +60,7 @@ struct CollectionView: View {
                     Label("Add Item", systemImage: "plus")
                 }
             }
+            organizeToolbar
         }
         .sheet(isPresented: $showingAdd) {
             AddEditItemView(item: nil)
@@ -55,6 +75,10 @@ struct CollectionView: View {
                 return model
             }())
         }
+        .sheet(isPresented: $showingFilterSheet) {
+            FilterSheetView(filter: $filter,
+                            options: FilterOptions.make(items: allItems))
+        }
     }
 
     private func handleScan(payload: String, isQR: Bool) {
@@ -62,7 +86,7 @@ struct CollectionView: View {
         let route = ScanRouter.route(
             payload: payload,
             isQR: isQR,
-            existingItemIDs: Set(items.map(\.id)))
+            existingItemIDs: Set(allItems.map(\.id)))
         switch route {
         case .existingItem(let id):
             router.open(itemID: id)
@@ -71,30 +95,129 @@ struct CollectionView: View {
         }
     }
 
-    private var grid: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(items) { item in
-                    NavigationLink(value: item.id) {
-                        ItemCell(item: item)
+    // MARK: - Content
+
+    @ViewBuilder private var content: some View {
+        if items.isEmpty {
+            ContentUnavailableView(
+                filter.scope == .wishlist ? "No Wishlist Items" : "No Items",
+                systemImage: "bag",
+                description: Text(filter.activeFilterCount > 0 || !filter.query.isEmpty
+                                  ? "Try clearing filters or search."
+                                  : "Tap + to add your first item.")
+            )
+            .frame(maxHeight: .infinity)
+        } else if layout == .grid {
+            ScrollView {
+                LazyVGrid(columns: gridColumns, spacing: 12) {
+                    ForEach(items) { item in
+                        NavigationLink(value: item.id) {
+                            ItemCell(item: item)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                }
+                .padding()
+            }
+        } else {
+            List(items) { item in
+                NavigationLink(value: item.id) {
+                    ItemRow(item: item)
                 }
             }
-            .padding()
+            .listStyle(.plain)
         }
     }
 
-    private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No items yet", systemImage: "bag")
-        } description: {
-            Text("Your leather collection starts here.")
-        } actions: {
-            Button("Add your first item") {
-                showingAdd = true
+    private var gridColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 150), spacing: 12)]
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder private var organizeToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Menu {
+                Picker("Sort by", selection: $filter.sortKey) {
+                    ForEach(SortKey.allCases) { key in
+                        Text(key.rawValue).tag(key)
+                    }
+                }
+                Divider()
+                Picker("Direction", selection: $filter.sortAscending) {
+                    Text("Ascending").tag(true)
+                    Text("Descending").tag(false)
+                }
+            } label: {
+                Label("Sort", systemImage: "arrow.up.arrow.down")
             }
-            .buttonStyle(.borderedProminent)
+
+            Button {
+                layoutRaw = (layout == .grid ? CollectionLayout.list : .grid).rawValue
+            } label: {
+                Label(layout == .grid ? "Switch to list layout" : "Switch to grid layout",
+                      systemImage: layout == .grid ? "list.bullet" : "square.grid.2x2")
+            }
+
+            Button {
+                showingFilterSheet = true
+            } label: {
+                Label("Filters",
+                      systemImage: filter.activeFilterCount > 0
+                      ? "line.3.horizontal.decrease.circle.fill"
+                      : "line.3.horizontal.decrease.circle")
+            }
+        }
+    }
+}
+
+/// Compact row for the list layout. Thumbnails only — never Photo.imageData
+/// decoded at full size in a list.
+struct ItemRow: View {
+    let item: Item
+    @State private var thumbnail: UIImage?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Group {
+                if let thumbnail {
+                    Image(uiImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "bag")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 56, height: 56)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name.isEmpty ? "Untitled" : item.name)
+                    .font(.headline)
+                Text([item.size, item.color, item.leatherType?.rawValue]
+                        .compactMap { $0 }
+                        .joined(separator: " · "))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if item.favorite {
+                Image(systemName: "heart.fill").foregroundStyle(.pink)
+            }
+            if item.isUnicorn {
+                Image(systemName: "sparkles").foregroundStyle(.purple)
+            }
+        }
+        .task(id: item.primaryPhoto?.id) {
+            if let photo = item.primaryPhoto {
+                thumbnail = await ImageStore.shared.thumbnail(for: photo.id,
+                                                              imageData: photo.imageData)
+            } else {
+                thumbnail = nil
+            }
         }
     }
 }
