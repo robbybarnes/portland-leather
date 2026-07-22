@@ -177,7 +177,7 @@ final class AddEditItemModelTests: XCTestCase {
     }
 
     func testFailedAddRollsBackPendingObjectsAndKeepsInputsForRetry() throws {
-        let photoData = Data([0x00, 0x01, 0x02])
+        let photoData = try makeTestJPEGData()
         let model = AddEditItemModel(item: nil)
         model.name = "Retry Tote"
         model.color = "Honey"
@@ -190,29 +190,51 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertFalse(context.hasChanges)
         XCTAssertTrue(context.insertedModelsArray.isEmpty)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<Item>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Photo>()), 0,
+                       "A failed add must not leave an orphaned Photo")
 
         XCTAssertThrowsError(try model.save(in: context, saveOperation: forceSaveFailure),
                              "A second tap must not accumulate another pending Item")
+        XCTAssertEqual(model.newPhotoDatas, [photoData],
+                       "Queued photo input must survive every failed attempt")
         XCTAssertFalse(context.hasChanges)
         XCTAssertTrue(context.insertedModelsArray.isEmpty)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<Item>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Photo>()), 0,
+                       "Repeated failures must not accumulate orphaned Photos")
 
         let saved = try model.save(in: context)
-        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Item>()), 1)
+        let items = try context.fetch(FetchDescriptor<Item>())
+        let photos = try context.fetch(FetchDescriptor<Photo>())
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(photos.count, 1)
         XCTAssertEqual(saved.name, "Retry Tote")
         XCTAssertEqual(saved.color, "Honey")
-        XCTAssertTrue((saved.photos ?? []).isEmpty,
-                      "The undecodable queued photo remains skippable on a successful retry")
+        XCTAssertEqual(saved.photos?.count, 1)
+        let photo = try XCTUnwrap(saved.photos?.first)
+        XCTAssertEqual(photo.id, photos.first?.id)
+        XCTAssertEqual(photo.item?.id, saved.id,
+                       "The Photo inverse must point to the saved Item")
+        XCTAssertTrue(photo.isPrimary)
+        XCTAssertEqual(saved.photos?.filter(\.isPrimary).count, 1)
+        XCTAssertEqual(saved.primaryPhoto?.id, photo.id)
         XCTAssertTrue(model.newPhotoDatas.isEmpty)
     }
 
     func testFailedEditRollsBackItemAndKeepsEditedFormAndPhotoInput() throws {
+        let photoData = try makeTestJPEGData()
         let item = Item()
         item.name = "Original Name"
         item.rating = 2
+        let originalPhoto = Photo()
+        originalPhoto.imageData = photoData
+        originalPhoto.isPrimary = true
+        originalPhoto.item = item
         context.insert(item)
+        context.insert(originalPhoto)
         try context.save()
-        let photoData = Data([0x00, 0x01, 0x02])
+        XCTAssertEqual(item.photos?.map(\.id), [originalPhoto.id])
+
         let model = AddEditItemModel(item: item)
         model.name = "Edited Name"
         model.rating = 5
@@ -221,11 +243,32 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertThrowsError(try model.save(in: context, saveOperation: forceSaveFailure))
         XCTAssertEqual(item.name, "Original Name")
         XCTAssertEqual(item.rating, 2)
-        XCTAssertTrue((item.photos ?? []).isEmpty)
+        XCTAssertEqual(item.photos?.map(\.id), [originalPhoto.id],
+                       "A failed edit must restore the prior photo relationship")
+        XCTAssertEqual(originalPhoto.item?.id, item.id)
+        XCTAssertEqual(item.primaryPhoto?.id, originalPhoto.id)
         XCTAssertFalse(context.hasChanges)
+        XCTAssertTrue(context.insertedModelsArray.isEmpty)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Item>()), 1)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Photo>()), 1,
+                       "The attempted photo must not survive as an orphan")
         XCTAssertEqual(model.name, "Edited Name")
         XCTAssertEqual(model.rating, 5)
         XCTAssertEqual(model.newPhotoDatas, [photoData])
+
+        let saved = try model.save(in: context)
+        let items = try context.fetch(FetchDescriptor<Item>())
+        let photos = try context.fetch(FetchDescriptor<Photo>())
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(photos.count, 2)
+        XCTAssertEqual(saved.photos?.count, 2)
+        XCTAssertEqual(originalPhoto.item?.id, saved.id)
+        let addedPhoto = try XCTUnwrap(photos.first { $0.id != originalPhoto.id })
+        XCTAssertEqual(addedPhoto.item?.id, saved.id)
+        XCTAssertEqual(saved.photos?.filter(\.isPrimary).count, 1)
+        XCTAssertEqual(saved.primaryPhoto?.id, originalPhoto.id,
+                       "Retry must preserve the existing primary Photo")
+        XCTAssertTrue(model.newPhotoDatas.isEmpty)
     }
 
     private func forceSaveFailure(_ context: ModelContext) throws {

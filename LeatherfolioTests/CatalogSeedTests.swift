@@ -24,8 +24,8 @@ final class CatalogSeedTests: XCTestCase {
         let represented = Set(CatalogSeed.shared.lines.map(\.category))
 
         XCTAssertEqual(required.count, 9)
-        XCTAssertTrue(required.isSubset(of: represented),
-                      "Missing required categories: \(required.subtracting(represented).sorted())")
+        XCTAssertEqual(represented, required)
+        XCTAssertFalse(represented.contains(ItemCategory.other.rawValue))
     }
 
     func testNoBundledCatalogLineExceedsTwentyColors() {
