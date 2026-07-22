@@ -6,6 +6,10 @@ import UIKit
 @MainActor
 final class AddEditItemModelTests: XCTestCase {
 
+    private enum ForcedSaveError: Error {
+        case expected
+    }
+
     private var container: ModelContainer!
     private var context: ModelContext!
 
@@ -70,6 +74,39 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertEqual(item.estimatedValue, 180)
         XCTAssertEqual(item.valueDelta, Decimal(string: "54.50", locale: .current))
         XCTAssertNil(item.retailCost)
+    }
+
+    func testDecimalHelpersRoundTripGermanLocale() throws {
+        let german = Locale(identifier: "de_DE")
+        let original = try XCTUnwrap(Decimal(string: "1234.56", locale: Locale(identifier: "en_US_POSIX")))
+
+        let text = DecimalParsing.text(from: original, locale: german)
+
+        XCTAssertEqual(text, "1234,56")
+        XCTAssertEqual(DecimalParsing.decimal(from: text, locale: german), original)
+    }
+
+    func testUntouchedGermanLocaleEditPreservesDecimalValues() throws {
+        let german = Locale(identifier: "de_DE")
+        let item = Item()
+        item.name = "Wallet"
+        item.myCost = Decimal(string: "1234.56", locale: Locale(identifier: "en_US_POSIX"))
+        item.retailCost = Decimal(string: "99.95", locale: Locale(identifier: "en_US_POSIX"))
+        item.estimatedValue = Decimal(string: "1500.01", locale: Locale(identifier: "en_US_POSIX"))
+        context.insert(item)
+        try context.save()
+
+        let model = AddEditItemModel(item: item, locale: german)
+        XCTAssertEqual(model.myCostText, "1234,56")
+        XCTAssertEqual(model.retailCostText, "99,95")
+        XCTAssertEqual(model.estimatedValueText, "1500,01")
+
+        _ = try model.save(in: context)
+
+        XCTAssertEqual(item.myCost, Decimal(string: "1234.56", locale: Locale(identifier: "en_US_POSIX")))
+        XCTAssertEqual(item.retailCost, Decimal(string: "99.95", locale: Locale(identifier: "en_US_POSIX")))
+        XCTAssertEqual(item.estimatedValue,
+                       Decimal(string: "1500.01", locale: Locale(identifier: "en_US_POSIX")))
     }
 
     func testSaveAttachesDownsampledPrimaryPhoto() throws {
@@ -137,5 +174,64 @@ final class AddEditItemModelTests: XCTestCase {
         XCTAssertEqual(item.photos?.count, 2)
         XCTAssertEqual(item.primaryPhoto?.id, originalPrimaryID)
         XCTAssertEqual(item.photos?.filter(\.isPrimary).count, 1)
+    }
+
+    func testFailedAddRollsBackPendingObjectsAndKeepsInputsForRetry() throws {
+        let photoData = Data([0x00, 0x01, 0x02])
+        let model = AddEditItemModel(item: nil)
+        model.name = "Retry Tote"
+        model.color = "Honey"
+        model.newPhotoDatas = [photoData]
+
+        XCTAssertThrowsError(try model.save(in: context, saveOperation: forceSaveFailure))
+        XCTAssertEqual(model.name, "Retry Tote")
+        XCTAssertEqual(model.color, "Honey")
+        XCTAssertEqual(model.newPhotoDatas, [photoData])
+        XCTAssertFalse(context.hasChanges)
+        XCTAssertTrue(context.insertedModelsArray.isEmpty)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Item>()), 0)
+
+        XCTAssertThrowsError(try model.save(in: context, saveOperation: forceSaveFailure),
+                             "A second tap must not accumulate another pending Item")
+        XCTAssertFalse(context.hasChanges)
+        XCTAssertTrue(context.insertedModelsArray.isEmpty)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Item>()), 0)
+
+        let saved = try model.save(in: context)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Item>()), 1)
+        XCTAssertEqual(saved.name, "Retry Tote")
+        XCTAssertEqual(saved.color, "Honey")
+        XCTAssertTrue((saved.photos ?? []).isEmpty,
+                      "The undecodable queued photo remains skippable on a successful retry")
+        XCTAssertTrue(model.newPhotoDatas.isEmpty)
+    }
+
+    func testFailedEditRollsBackItemAndKeepsEditedFormAndPhotoInput() throws {
+        let item = Item()
+        item.name = "Original Name"
+        item.rating = 2
+        context.insert(item)
+        try context.save()
+        let photoData = Data([0x00, 0x01, 0x02])
+        let model = AddEditItemModel(item: item)
+        model.name = "Edited Name"
+        model.rating = 5
+        model.newPhotoDatas = [photoData]
+
+        XCTAssertThrowsError(try model.save(in: context, saveOperation: forceSaveFailure))
+        XCTAssertEqual(item.name, "Original Name")
+        XCTAssertEqual(item.rating, 2)
+        XCTAssertTrue((item.photos ?? []).isEmpty)
+        XCTAssertFalse(context.hasChanges)
+        XCTAssertEqual(model.name, "Edited Name")
+        XCTAssertEqual(model.rating, 5)
+        XCTAssertEqual(model.newPhotoDatas, [photoData])
+    }
+
+    private func forceSaveFailure(_ context: ModelContext) throws {
+        // Match ModelContext.save(): register mutations before surfacing the
+        // deterministic failure so rollback exercises real tracked changes.
+        context.processPendingChanges()
+        throw ForcedSaveError.expected
     }
 }

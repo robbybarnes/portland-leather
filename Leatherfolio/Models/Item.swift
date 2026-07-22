@@ -5,6 +5,7 @@ import Foundation
 final class Item {
     var id: UUID = UUID()
     var name: String = ""
+    var catalogLineName: String? = nil
     var categoryRaw: String = ItemCategory.other.rawValue
     var size: String?
     var color: String?

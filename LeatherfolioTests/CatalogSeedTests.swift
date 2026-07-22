@@ -6,7 +6,33 @@ final class CatalogSeedTests: XCTestCase {
     func testSharedDecodesBundledJSON() {
         // Tests are hosted in the app, so Bundle.main resolves the app bundle.
         XCTAssertFalse(CatalogSeed.shared.lines.isEmpty, "bundled plg_catalog.json should decode to non-empty lines")
-        XCTAssertGreaterThanOrEqual(CatalogSeed.shared.lines.count, 15)
+        XCTAssertEqual(CatalogSeed.shared.lines.count, 23)
+    }
+
+    func testBundledCatalogHasExactly23UniqueLineIDsAndNames() {
+        let lines = CatalogSeed.shared.lines
+        XCTAssertEqual(lines.count, 23)
+        XCTAssertEqual(Set(lines.map(\.id)).count, 23)
+        XCTAssertEqual(Set(lines.map(\.name)).count, 23)
+    }
+
+    func testBundledCatalogRepresentsAllNineRequiredNonOtherCategories() {
+        let required = Set(
+            ItemCategory.allCases
+                .filter { $0 != .other }
+                .map(\.rawValue))
+        let represented = Set(CatalogSeed.shared.lines.map(\.category))
+
+        XCTAssertEqual(required.count, 9)
+        XCTAssertTrue(required.isSubset(of: represented),
+                      "Missing required categories: \(required.subtracting(represented).sorted())")
+    }
+
+    func testNoBundledCatalogLineExceedsTwentyColors() {
+        for line in CatalogSeed.shared.lines {
+            XCTAssertLessThanOrEqual(line.colors.count, 20,
+                                     "\(line.name) has \(line.colors.count) colors")
+        }
     }
 
     func testEveryLineUsesValidCategoryAndLeatherTypeRawValues() {

@@ -8,6 +8,8 @@ import SwiftData
 @Observable
 final class AddEditItemModel {
 
+    private let locale: Locale
+
     // MARK: Form fields
     var name = ""
     var category: ItemCategory = .other
@@ -103,9 +105,14 @@ final class AddEditItemModel {
 
     /// Call after `category` changes: a line from another category can't stay selected.
     func categoryDidChange() {
-        if let selectedLine, selectedLine.category != category.rawValue {
-            selectLine(nil)
+        guard let selectedLine, selectedLine.category != category.rawValue else { return }
+        if name == selectedLine.name { name = "" }
+        if selectedLine.sizes.contains(size) { size = "" }
+        if selectedLine.colors.contains(color) { color = "" }
+        if let leatherType, selectedLine.leatherTypes.contains(leatherType.rawValue) {
+            self.leatherType = nil
         }
+        selectLine(nil)
     }
 
     /// Call when loading an existing item for editing: re-links the line whose
@@ -118,7 +125,8 @@ final class AddEditItemModel {
     var isEditing: Bool { existingItem != nil }
     var canSave: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    init(item: Item?) {
+    init(item: Item?, locale: Locale = .current) {
+        self.locale = locale
         existingItem = item
         guard let item else { return }
         name = item.name
@@ -131,14 +139,17 @@ final class AddEditItemModel {
         isUnicorn = item.isUnicorn
         favorite = item.favorite
         isWishlist = item.isWishlist
-        myCostText = DecimalParsing.text(from: item.myCost)
-        retailCostText = DecimalParsing.text(from: item.retailCost)
-        estimatedValueText = DecimalParsing.text(from: item.estimatedValue)
+        myCostText = DecimalParsing.text(from: item.myCost, locale: locale)
+        retailCostText = DecimalParsing.text(from: item.retailCost, locale: locale)
+        estimatedValueText = DecimalParsing.text(from: item.estimatedValue, locale: locale)
         hasDateAcquired = item.dateAcquired != nil
         dateAcquired = item.dateAcquired ?? .now
         notes = item.notes ?? ""
         upc = item.upc ?? ""
-        syncSelectedLineFromName()
+        selectedLineName = item.catalogLineName
+        if selectedLineName == nil {
+            syncSelectedLineFromName()
+        }
     }
 
     /// Writes the form into a new or existing Item, downsampling (2048 max
@@ -147,44 +158,131 @@ final class AddEditItemModel {
     /// skipped so the item still saves (spec: never lose user input over an
     /// image failure).
     @discardableResult
-    func save(in context: ModelContext, imageStore: ImageStore = .shared) throws -> Item {
+    func save(
+        in context: ModelContext,
+        imageStore: ImageStore = .shared,
+        saveOperation: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> Item {
         let item = existingItem ?? Item()
-        if existingItem == nil {
-            context.insert(item)
-        }
-        item.name = name.trimmingCharacters(in: .whitespaces)
-        item.category = category
-        item.size = normalized(sizeText)
-        item.color = normalized(colorText)
-        item.leatherType = leatherType
-        item.condition = condition
-        item.rating = rating
-        item.isUnicorn = isUnicorn
-        item.favorite = favorite
-        item.isWishlist = isWishlist
-        item.myCost = DecimalParsing.decimal(from: myCostText)
-        item.retailCost = DecimalParsing.decimal(from: retailCostText)
-        item.estimatedValue = DecimalParsing.decimal(from: estimatedValueText)
-        item.dateAcquired = hasDateAcquired ? dateAcquired : nil
-        item.notes = normalized(notes)
-        item.upc = normalized(upc)
-        item.updatedAt = .now
+        let original = existingItem.map(ItemSaveSnapshot.init)
+        do {
+            try context.transaction {
+                if existingItem == nil {
+                    context.insert(item)
+                }
+                item.name = name.trimmingCharacters(in: .whitespaces)
+                item.catalogLineName = selectedLineName
+                item.category = category
+                item.size = normalized(sizeText)
+                item.color = normalized(colorText)
+                item.leatherType = leatherType
+                item.condition = condition
+                item.rating = rating
+                item.isUnicorn = isUnicorn
+                item.favorite = favorite
+                item.isWishlist = isWishlist
+                item.myCost = DecimalParsing.decimal(from: myCostText, locale: locale)
+                item.retailCost = DecimalParsing.decimal(from: retailCostText, locale: locale)
+                item.estimatedValue = DecimalParsing.decimal(from: estimatedValueText, locale: locale)
+                item.dateAcquired = hasDateAcquired ? dateAcquired : nil
+                item.notes = normalized(notes)
+                item.upc = normalized(upc)
+                item.updatedAt = .now
 
-        var hasPrimary = (item.photos ?? []).contains(where: \.isPrimary)
-        for data in newPhotoDatas {
-            guard let jpeg = imageStore.downsampledJPEG(from: data, maxDimension: 2_048) else {
-                continue  // undecodable photo: skip it, keep the item
+                var hasPrimary = (item.photos ?? []).contains(where: \.isPrimary)
+                for data in newPhotoDatas {
+                    guard let jpeg = imageStore.downsampledJPEG(from: data, maxDimension: 2_048) else {
+                        continue  // undecodable photo: skip it, keep the item
+                    }
+                    let photo = Photo()
+                    photo.imageData = jpeg
+                    photo.isPrimary = !hasPrimary
+                    hasPrimary = true
+                    photo.item = item
+                    context.insert(photo)
+                }
+                try saveOperation(context)
             }
-            let photo = Photo()
-            photo.imageData = jpeg
-            photo.isPrimary = !hasPrimary
-            hasPrimary = true
-            photo.item = item
-            context.insert(photo)
+        } catch {
+            original?.restore(item)
+            context.processPendingChanges()
+            context.rollback()
+            throw error
         }
-        newPhotoDatas = []
-        try context.save()
+
+        existingItem = item
+        newPhotoDatas.removeAll()
         return item
+    }
+
+    /// SwiftData rollback clears pending-change bookkeeping but does not
+    /// reliably refresh an already-referenced model on every supported SDK.
+    /// Restore the edited object first, then rollback the context to discard
+    /// inserted photos and clear the transaction state.
+    private struct ItemSaveSnapshot {
+        let name: String
+        let catalogLineName: String?
+        let categoryRaw: String
+        let size: String?
+        let color: String?
+        let leatherTypeRaw: String?
+        let isUnicorn: Bool
+        let isWishlist: Bool
+        let favorite: Bool
+        let myCost: Decimal?
+        let retailCost: Decimal?
+        let estimatedValue: Decimal?
+        let rating: Int
+        let upc: String?
+        let conditionRaw: String?
+        let dateAcquired: Date?
+        let notes: String?
+        let updatedAt: Date
+        let photos: [Photo]?
+
+        init(_ item: Item) {
+            name = item.name
+            catalogLineName = item.catalogLineName
+            categoryRaw = item.categoryRaw
+            size = item.size
+            color = item.color
+            leatherTypeRaw = item.leatherTypeRaw
+            isUnicorn = item.isUnicorn
+            isWishlist = item.isWishlist
+            favorite = item.favorite
+            myCost = item.myCost
+            retailCost = item.retailCost
+            estimatedValue = item.estimatedValue
+            rating = item.rating
+            upc = item.upc
+            conditionRaw = item.conditionRaw
+            dateAcquired = item.dateAcquired
+            notes = item.notes
+            updatedAt = item.updatedAt
+            photos = item.photos
+        }
+
+        func restore(_ item: Item) {
+            item.name = name
+            item.catalogLineName = catalogLineName
+            item.categoryRaw = categoryRaw
+            item.size = size
+            item.color = color
+            item.leatherTypeRaw = leatherTypeRaw
+            item.isUnicorn = isUnicorn
+            item.isWishlist = isWishlist
+            item.favorite = favorite
+            item.myCost = myCost
+            item.retailCost = retailCost
+            item.estimatedValue = estimatedValue
+            item.rating = rating
+            item.upc = upc
+            item.conditionRaw = conditionRaw
+            item.dateAcquired = dateAcquired
+            item.notes = notes
+            item.updatedAt = updatedAt
+            item.photos = photos
+        }
     }
 
     private func normalized(_ text: String) -> String? {

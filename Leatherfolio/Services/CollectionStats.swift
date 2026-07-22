@@ -35,7 +35,7 @@ struct CollectionStats: Equatable {
 
     init(items: [Item], catalog: CatalogSeed) {
         itemCount = items.count
-        distinctColorCount = Set(items.compactMap(\.color)).count
+        distinctColorCount = Set(items.compactMap { normalizedColorKey($0.color) }).count
         distinctLeatherTypeCount = Set(items.compactMap(\.leatherType)).count
         unicornCount = items.count(where: \.isUnicorn)
         totalSpent = items.compactMap(\.myCost).reduce(0, +)
@@ -53,13 +53,16 @@ struct CollectionStats: Equatable {
             return CategoryCount(category: cat, count: count)
         }
 
-        // Group owned colors by catalog line (matched by exact item name).
+        // Prefer the durable catalog association. Exact item-name matching is
+        // retained for items created before catalogLineName existed.
         var ownedByLine: [String: Set<String>] = [:]
         for item in items {
-            guard let line = catalog.line(named: item.name) else { continue }
+            let associatedLine = item.catalogLineName.flatMap(catalog.line(named:))
+            guard let line = associatedLine ?? catalog.line(named: item.name) else { continue }
             let owned = ownedByLine[line.name] ?? []
-            if let color = item.color, line.colors.contains(color) {
-                ownedByLine[line.name] = owned.union([color])
+            let canonicalColors = canonicalColorMap(for: line.colors)
+            if let key = normalizedColorKey(item.color), let canonical = canonicalColors[key] {
+                ownedByLine[line.name] = owned.union([canonical])
             } else {
                 ownedByLine[line.name] = owned  // owning the line with an off-palette color still lists the line
             }
@@ -69,7 +72,26 @@ struct CollectionStats: Equatable {
             return LineCompleteness(
                 lineName: lineName,
                 ownedColors: ownedByLine[lineName, default: []].sorted(),
-                totalColors: line.colors.count)
+                totalColors: canonicalColorMap(for: line.colors).count)
         }
     }
+}
+
+private func normalizedColorKey(_ color: String?) -> String? {
+    guard let color else { return nil }
+    let trimmed = color.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    let locale = Locale(identifier: "en_US_POSIX")
+    return trimmed
+        .folding(options: [.diacriticInsensitive, .widthInsensitive], locale: locale)
+        .lowercased(with: locale)
+}
+
+private func canonicalColorMap(for colors: [String]) -> [String: String] {
+    var result: [String: String] = [:]
+    for color in colors {
+        guard let key = normalizedColorKey(color), result[key] == nil else { continue }
+        result[key] = color
+    }
+    return result
 }

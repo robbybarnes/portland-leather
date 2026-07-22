@@ -30,6 +30,16 @@ final class CollectionStatsTests: XCTestCase {
         return CatalogSeed(data: Data(json.utf8))
     }
 
+    private func normalizationCatalog() -> CatalogSeed {
+        let json = """
+        [
+          {"name": "Test Tote", "category": "Tote", "sizes": [],
+           "colors": ["Honey", "Café"], "leatherTypes": ["Smooth"]}
+        ]
+        """
+        return CatalogSeed(data: Data(json.utf8))
+    }
+
     private func makeItem(name: String = "Test Tote", color: String? = nil,
                           leatherType: LeatherType? = nil, isUnicorn: Bool = false,
                           myCost: Decimal? = nil, estimatedValue: Decimal? = nil,
@@ -70,6 +80,20 @@ final class CollectionStatsTests: XCTestCase {
         XCTAssertEqual(stats.distinctColorCount, 2, "Honey + Black; nil colors don't count")
         XCTAssertEqual(stats.distinctLeatherTypeCount, 2, "Smooth + Pebbled; nil doesn't count")
         XCTAssertEqual(stats.unicornCount, 1)
+    }
+
+    func testDistinctColorsNormalizeCaseDiacriticsAndSurroundingWhitespace() {
+        let items = [
+            makeItem(color: "Honey"),
+            makeItem(color: " honey "),
+            makeItem(color: "HÖNEY"),
+            makeItem(color: "Café"),
+            makeItem(color: " CAFE ")
+        ]
+
+        let stats = CollectionStats(items: items, catalog: normalizationCatalog())
+
+        XCTAssertEqual(stats.distinctColorCount, 2)
     }
 
     func testItemsByCategoryOrderedAndNonEmptyOnly() {
@@ -131,5 +155,34 @@ final class CollectionStatsTests: XCTestCase {
         let items = try! context.fetch(FetchDescriptor<Item>())
         let stats = CollectionStats(items: items, catalog: fixtureCatalog())
         XCTAssertEqual(stats.lineCompleteness.map(\.lineName), ["Test Tote", "Test Wallet"])
+    }
+
+    func testCustomItemNameUsesPersistedCatalogAssociationForCompleteness() {
+        let item = makeItem(name: "My Road Trip Bag", color: "Honey")
+        item.catalogLineName = "Test Tote"
+
+        let stats = CollectionStats(items: [item], catalog: fixtureCatalog())
+
+        XCTAssertEqual(stats.lineCompleteness,
+                       [LineCompleteness(
+                        lineName: "Test Tote",
+                        ownedColors: ["Honey"],
+                        totalColors: 3)])
+    }
+
+    func testLineCompletenessNormalizesOwnedColorsAndEmitsCatalogSpelling() {
+        let honey = makeItem(name: "Test Tote", color: " honey ")
+        let honeyWithDiacritic = makeItem(name: "Test Tote", color: "HÖNEY")
+        let cafeDecomposed = makeItem(name: "Test Tote", color: " CAFE\u{301} ")
+
+        let stats = CollectionStats(
+            items: [honey, honeyWithDiacritic, cafeDecomposed],
+            catalog: normalizationCatalog())
+
+        XCTAssertEqual(stats.lineCompleteness,
+                       [LineCompleteness(
+                        lineName: "Test Tote",
+                        ownedColors: ["Café", "Honey"],
+                        totalColors: 2)])
     }
 }

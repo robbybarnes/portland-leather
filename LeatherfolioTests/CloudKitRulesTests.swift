@@ -20,6 +20,63 @@ final class CloudKitRulesTests: XCTestCase {
         container = nil
     }
 
+    func testCloudKitDisabledUsesExplicitNoneInsteadOfSDKAutomaticDefault() throws {
+        XCTAssertFalse(AppConfig.cloudKitEnabled)
+
+        let configured = AppModelContainer.configuration(inMemory: true)
+        let schema = try XCTUnwrap(configured.schema)
+        let explicitNone = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: true,
+            cloudKitDatabase: .none)
+        let sdkDefault = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: true)
+
+        let configuredDatabase = String(reflecting: configured.cloudKitDatabase)
+        let explicitNoneDatabase = String(reflecting: explicitNone.cloudKitDatabase)
+        let sdkDefaultDatabase = String(reflecting: sdkDefault.cloudKitDatabase)
+        XCTAssertEqual(configuredDatabase, explicitNoneDatabase)
+        XCTAssertNotEqual(configuredDatabase, sdkDefaultDatabase,
+                          "The SDK default is .automatic, which must stay disabled until signing exists")
+    }
+
+    func testDiskStoreReopensItemAndExternallyStoredPhotoData() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "LeatherfolioTests-" + UUID().uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+
+        let storeURL = directory.appending(path: "collection.store")
+        let itemID = UUID()
+        let photoData = Data((0..<65_536).map { UInt8($0 % 251) })
+
+        do {
+            let diskContainer = try AppModelContainer.make(inMemory: false, storeURL: storeURL)
+            let diskContext = diskContainer.mainContext
+            let item = Item()
+            item.id = itemID
+            item.name = "Persistent Tote"
+            let photo = Photo()
+            photo.imageData = photoData
+            photo.isPrimary = true
+            photo.item = item
+            diskContext.insert(item)
+            diskContext.insert(photo)
+            try diskContext.save()
+        }
+
+        do {
+            let reopenedContainer = try AppModelContainer.make(inMemory: false, storeURL: storeURL)
+            let reopenedContext = reopenedContainer.mainContext
+            let saved = try XCTUnwrap(
+                reopenedContext.fetch(FetchDescriptor<Item>()).first { $0.id == itemID })
+            XCTAssertEqual(saved.name, "Persistent Tote")
+            XCTAssertEqual(saved.photos?.count, 1)
+            XCTAssertEqual(saved.primaryPhoto?.imageData, photoData)
+        }
+    }
+
     /// CloudKit rule: every property optional or defaulted. If a bare Item()
     /// inserts and saves with no arguments, the rule holds for the schema.
     func testItemWithOnlyDefaultsSaves() throws {
@@ -38,6 +95,7 @@ final class CloudKitRulesTests: XCTestCase {
         XCTAssertFalse(saved.favorite)
         XCTAssertNil(saved.size)
         XCTAssertNil(saved.color)
+        XCTAssertNil(saved.catalogLineName)
         XCTAssertNil(saved.leatherType)
         XCTAssertNil(saved.condition)
         XCTAssertNil(saved.myCost)

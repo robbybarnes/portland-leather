@@ -74,6 +74,43 @@ final class AddEditItemModelCatalogTests: XCTestCase {
         XCTAssertTrue(model.sizeOptions.isEmpty, "no line selected → free-text pickers")
     }
 
+    func testCategoryChangeClearsValuesDerivedFromPreviousLine() {
+        let model = makeModel()
+        model.category = .tote
+        model.selectLine(model.catalog.line(named: "Test Tote"))
+        model.size = "Large"
+        model.color = "Honey"
+        model.leatherType = .smooth
+
+        model.category = .wallet
+        model.categoryDidChange()
+
+        XCTAssertNil(model.selectedLineName)
+        XCTAssertEqual(model.name, "")
+        XCTAssertEqual(model.size, "")
+        XCTAssertEqual(model.color, "")
+        XCTAssertNil(model.leatherType)
+    }
+
+    func testCategoryChangePreservesValuesThatWereCustomizedAfterLineSelection() {
+        let model = makeModel()
+        model.category = .tote
+        model.selectLine(model.catalog.line(named: "Test Tote"))
+        model.name = "My Road Trip Bag"
+        model.size = "Bespoke"
+        model.color = "Custom Teal"
+        model.leatherType = .metallic
+
+        model.category = .wallet
+        model.categoryDidChange()
+
+        XCTAssertNil(model.selectedLineName)
+        XCTAssertEqual(model.name, "My Road Trip Bag")
+        XCTAssertEqual(model.size, "Bespoke")
+        XCTAssertEqual(model.color, "Custom Teal")
+        XCTAssertEqual(model.leatherType, .metallic)
+    }
+
     func testNoLineSelectedYieldsEmptyOptions() {
         let model = makeModel()
         model.category = .tote
@@ -96,5 +133,24 @@ final class AddEditItemModelCatalogTests: XCTestCase {
         XCTAssertEqual(items.first?.name, "One-off Sample Bag")
         XCTAssertEqual(items.first?.color, "Custom Teal")
         XCTAssertEqual(items.first?.size, "Bespoke")
+    }
+
+    func testCatalogAssociationPersistsSeparatelyFromCustomDisplayName() throws {
+        let container = try AppModelContainer.make(inMemory: true)
+        let context = container.mainContext
+        let model = makeModel()
+        model.category = .tote
+        model.selectLine(model.catalog.line(named: "Test Tote"))
+        model.name = "My Road Trip Bag"
+
+        let item = try model.save(in: context)
+
+        XCTAssertEqual(item.name, "My Road Trip Bag")
+        XCTAssertEqual(item.catalogLineName, "Test Tote")
+
+        let edit = AddEditItemModel(item: item)
+        edit.catalog = fixtureCatalog()
+        XCTAssertEqual(edit.selectedLineName, "Test Tote")
+        XCTAssertEqual(edit.selectedLine?.name, "Test Tote")
     }
 }

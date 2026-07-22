@@ -2,15 +2,22 @@ import Foundation
 
 /// Locale-aware Decimal <-> text helpers for the currency fields.
 enum DecimalParsing {
-    static func decimal(from text: String) -> Decimal? {
+    static func decimal(from text: String, locale: Locale = .current) -> Decimal? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
-        return Decimal(string: trimmed, locale: .current)
+        return Decimal(string: trimmed, locale: locale)
     }
 
-    static func text(from decimal: Decimal?) -> String {
+    static func text(from decimal: Decimal?, locale: Locale = .current) -> String {
         guard let decimal else { return "" }
-        return "\(decimal)"
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = false
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 38
+        formatter.generatesDecimalNumbers = true
+        return formatter.string(from: NSDecimalNumber(decimal: decimal)) ?? "\(decimal)"
     }
 }
 

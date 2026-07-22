@@ -1,10 +1,10 @@
+import Foundation
 import SwiftData
 
 enum AppConfig {
     /// CloudKit sync is OFF until Apple Developer signing exists.
-    /// When flipping this on, change `cloudKitDatabase: .none` below to
-    /// `.automatic` and add the iCloud capability — that is the whole flip,
-    /// because the schema obeys every CloudKit rule already.
+    /// When flipping this on, add the iCloud capability; the model
+    /// configuration below already derives its database mode from this flag.
     static let cloudKitEnabled = false
 }
 
@@ -19,12 +19,49 @@ enum AppModelContainer {
         }
     }()
 
-    static func make(inMemory: Bool) throws -> ModelContainer {
-        let schema = Schema([Item.self, Photo.self, Tag.self])
-        let configuration = ModelConfiguration(
+    static func configuration(
+        inMemory: Bool,
+        storeURL: URL? = nil
+    ) -> ModelConfiguration {
+        configuration(
+            schema: makeSchema(),
+            inMemory: inMemory,
+            storeURL: storeURL)
+    }
+
+    static func make(
+        inMemory: Bool,
+        storeURL: URL? = nil
+    ) throws -> ModelContainer {
+        let schema = makeSchema()
+        let configuration = configuration(
             schema: schema,
-            isStoredInMemoryOnly: inMemory
-        )
+            inMemory: inMemory,
+            storeURL: storeURL)
         return try ModelContainer(for: schema, configurations: [configuration])
+    }
+
+    private static func makeSchema() -> Schema {
+        Schema([Item.self, Photo.self, Tag.self])
+    }
+
+    private static func configuration(
+        schema: Schema,
+        inMemory: Bool,
+        storeURL: URL?
+    ) -> ModelConfiguration {
+        let cloudKitDatabase: ModelConfiguration.CloudKitDatabase =
+            AppConfig.cloudKitEnabled ? .automatic : .none
+        if let storeURL {
+            precondition(!inMemory, "A custom store URL is only valid for an on-disk container")
+            return ModelConfiguration(
+                schema: schema,
+                url: storeURL,
+                cloudKitDatabase: cloudKitDatabase)
+        }
+        return ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: inMemory,
+            cloudKitDatabase: cloudKitDatabase)
     }
 }
