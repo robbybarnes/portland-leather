@@ -1,14 +1,19 @@
 import SwiftUI
 
-/// Warm editorial design language: cream backgrounds, cognac accents,
-/// espresso text, serif display type. Colors resolve from the asset catalog
-/// (light/dark variants; WCAG AA verified by ThemeContrastTests).
+/// Cognac Gallery design language: a quiet neutral ground (soft bone in light,
+/// near-black gallery in dark) so colorful product photos carry the color, with
+/// a single cognac accent and serif display type. Colors resolve from the asset
+/// catalog (light/dark variants; WCAG AA verified by ThemeContrastTests).
+///
+/// Asset names (Cream/Parchment/Espresso/Nutmeg/Cognac) are retained from the
+/// earlier Warm Editorial palette to keep the semantic API stable; only their
+/// values changed. Read them by role, not by literal color name.
 enum Theme {
-    static let background = Color("Cream")
-    static let card = Color("Parchment")
-    static let textPrimary = Color("Espresso")
-    static let textSecondary = Color("Nutmeg")
-    static let accent = Color("Cognac")
+    static let background = Color("Cream")      // Ground — soft bone / near-black
+    static let card = Color("Parchment")        // Card — white / warm charcoal
+    static let textPrimary = Color("Espresso")  // Ink
+    static let textSecondary = Color("Nutmeg")  // Clay
+    static let accent = Color("Cognac")         // Cognac
     static let gain = Color("Gain")
     static let loss = Color("Loss")
 
