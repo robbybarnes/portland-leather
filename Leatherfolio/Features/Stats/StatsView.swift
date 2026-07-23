@@ -152,9 +152,10 @@ private struct HouseDogReveal: View {
             }
             .padding(Theme.Spacing.xl)
         }
-        .accessibilityElement(children: .contain)
+        .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isModal)
         .accessibilityLabel("The house dog, Chief Bag Inspector")
+        .accessibilityHint("Tap to dismiss")
         .accessibilityAction(.escape, onDismiss)
     }
 }
