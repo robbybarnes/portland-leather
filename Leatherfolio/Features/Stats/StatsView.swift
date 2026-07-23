@@ -6,6 +6,8 @@ import Charts
 /// completeness. No streaks, no badges.
 struct StatsView: View {
     let stats: CollectionStats
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showDog = false
 
     var body: some View {
         ScrollView {
@@ -20,6 +22,26 @@ struct StatsView: View {
         }
         .navigationTitle("Stats")
         .background(Theme.background)
+        .sensoryFeedback(trigger: showDog) { _, revealed in
+            revealed ? .impact(flexibility: .soft) : nil
+        }
+        .overlay {
+            if showDog {
+                HouseDogReveal {
+                    withAnimation(.easeOut(duration: 0.2)) { showDog = false }
+                }
+                .transition(reduceMotion
+                            ? .opacity
+                            : .scale(scale: 0.85).combined(with: .opacity))
+            }
+        }
+    }
+
+    /// Easter egg: the house dog, hidden behind a long-press on the headline.
+    private func revealDog() {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.62)) {
+            showDog = true
+        }
     }
 
     // MARK: - Blocks
@@ -32,6 +54,10 @@ struct StatsView: View {
             unicornCount: stats.unicornCount
         ))
         .font(.display(.title3))
+        .contentShape(Rectangle())
+        .onLongPressGesture(minimumDuration: 0.5) { revealDog() }
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityAction(named: "Meet the house dog") { revealDog() }
     }
 
     private var moneyBlock: some View {
@@ -96,5 +122,39 @@ struct StatsView: View {
                 }
             }
         }
+    }
+}
+
+/// The house dog easter egg: a dimmed backdrop and a spring-in portrait of the
+/// Chief Bag Inspector. Dismissed by tapping anywhere or the VoiceOver escape.
+private struct HouseDogReveal: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onDismiss)
+
+            VStack(spacing: Theme.Spacing.m) {
+                Image("HouseDog")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 260)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shadow(color: .black.opacity(0.35), radius: 20, y: 10)
+                Text("Chief Bag Inspector")
+                    .font(.display(.title3))
+                    .foregroundStyle(.white)
+                Text("Tap to dismiss")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .padding(Theme.Spacing.xl)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityLabel("The house dog, Chief Bag Inspector")
+        .accessibilityAction(.escape, onDismiss)
     }
 }
